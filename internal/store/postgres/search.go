@@ -65,8 +65,8 @@ func (s *Store) searchVector(ctx context.Context, q store.Query) ([]store.Record
 
 	whereClause := "WHERE " + strings.Join(whereParts, " AND ")
 
-	// Add query vector
-	params = append(params, q.Vector)
+	vecStr := formatVector(q.Vector)
+	params = append(params, vecStr)
 	queryParam := currentParam
 
 	sql := fmt.Sprintf(`
