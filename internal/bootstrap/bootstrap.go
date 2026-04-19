@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -19,6 +20,7 @@ type Context struct {
 	Store   store.Store
 	Embedder embedder.Embedder
 	Memory  *memory.Memory
+	Logger  *slog.Logger
 }
 
 func MustNew(ctx context.Context) *Context {
@@ -34,6 +36,31 @@ func New(ctx context.Context) (*Context, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load config: %w", err)
 	}
+
+	var h slog.Handler
+	opts := &slog.HandlerOptions{}
+
+lvl := slog.LevelInfo
+	switch cfg.LogLevel {
+	case "debug":
+		lvl = slog.LevelDebug
+	case "info":
+		lvl = slog.LevelInfo
+	case "warn":
+		lvl = slog.LevelWarn
+	case "error":
+		lvl = slog.LevelError
+	default:
+		return nil, fmt.Errorf("unknown log level: %q", cfg.LogLevel)
+	}
+	opts.Level = lvl
+
+	if cfg.LogFormat == "json" {
+		h = slog.NewJSONHandler(os.Stdout, opts)
+	} else {
+		h = slog.NewTextHandler(os.Stdout, opts)
+	}
+	logger := slog.New(h)
 
 	str, err := buildStore(ctx, cfg)
 	if err != nil {
@@ -62,6 +89,7 @@ func New(ctx context.Context) (*Context, error) {
 		Store:    str,
 		Embedder: emb,
 		Memory:   mem,
+		Logger:   logger,
 	}, nil
 }
 

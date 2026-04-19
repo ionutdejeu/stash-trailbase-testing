@@ -44,6 +44,9 @@ STASH_LOG_FORMAT=text
 	if bootstrapCtx.Memory == nil {
 		t.Error("Memory is nil")
 	}
+	if bootstrapCtx.Logger == nil {
+		t.Error("Logger is nil")
+	}
 
 	if bootstrapCtx.Config.StoreDriver != "mapdb" {
 		t.Errorf("StoreDriver = %q, want %q", bootstrapCtx.Config.StoreDriver, "mapdb")
