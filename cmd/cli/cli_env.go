@@ -4,71 +4,60 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
+	"strings"
 
-	"github.com/alash3al/stash/internal/bootstrap"
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/urfave/cli/v3"
 )
 
 func EnvCmd(ctx context.Context, cmd *cli.Command) error {
-	// Get the shared bootstrap context from root command metadata
-	rootCmd := cmd.Root()
-	if rootCmd == nil {
-		return fmt.Errorf("root command not found")
+	// Collect all STASH_* environment variables
+	vars := getAllStashEnvVars()
+	
+	if len(vars) == 0 {
+		fmt.Println("No STASH_* environment variables found.")
+		return nil
 	}
-	bootstrapCtx, ok := rootCmd.Metadata["bootstrapCtx"].(*bootstrap.Context)
-	if !ok {
-		return fmt.Errorf("bootstrap context not found in metadata")
-	}
-
-	// Use same logic as bootstrap to determine config file
-	filename := os.Getenv("STASHCONFIG")
-
-	// Output config details using a table
+	
+	// Create and render table
 	t := table.NewWriter()
 	t.SetOutputMirror(os.Stdout)
 	t.SetStyle(table.StyleLight)
-	t.AppendHeader(table.Row{"Configuration Key", "Value"})
-	t.AppendRows([]table.Row{
-		{"ConfigFile", filename},
-		{"STASHCONFIG Env", os.Getenv("STASHCONFIG")},
-		{"Store Driver", bootstrapCtx.Config.StoreDriver},
-		{"Store DSN", MaskDSN(bootstrapCtx.Config.StoreDSN)},
-		{"Vector Dimension", bootstrapCtx.Config.VectorDim},
-		{"Max Result Size", bootstrapCtx.Config.MaxResultSize},
-		{"Embedder Driver", bootstrapCtx.Config.EmbedderDriver},
-		{"OpenAI API Key", MaskAPIKey(bootstrapCtx.Config.OpenAIAPIKey)},
-		{"OpenAI Base URL", bootstrapCtx.Config.OpenAIBaseURL},
-		{"Embedding Model", bootstrapCtx.Config.EmbeddingModel},
-		{"Frame TTL", bootstrapCtx.Config.FrameTTL},
-		{"HTTP Addr", bootstrapCtx.Config.HTTPAddr},
-		{"Log Level", bootstrapCtx.Config.LogLevel},
-		{"Log Format", bootstrapCtx.Config.LogFormat},
-	})
-	fmt.Println("=== Stash Configuration ===")
+	t.AppendHeader(table.Row{"Environment Variable", "Value"})
+	
+	for _, env := range vars {
+		t.AppendRow(table.Row{env[0], env[1]})
+	}
+	
 	t.Render()
-	fmt.Println()
-
-	// Log bootstrap status using the shared logger
-	bootstrapCtx.Logger.Info("Bootstrap successful",
-		"StoreInitialized", bootstrapCtx.Store != nil,
-		"EmbedderInitialized", bootstrapCtx.Embedder != nil,
-		"MemoryInitialized", bootstrapCtx.Memory != nil,
-	)
-
 	return nil
 }
 
-func MaskDSN(dsn string) string {
-	if len(dsn) > 50 {
-		return dsn[:20] + "..." + dsn[len(dsn)-20:]
+func getAllStashEnvVars() [][2]string {
+	vars := [][2]string{}
+	
+	// Get all env vars and filter for STASH_ prefix
+	for _, env := range os.Environ() {
+		if strings.HasPrefix(env, "STASH_") {
+			parts := strings.SplitN(env, "=", 2)
+			if len(parts) == 2 {
+				vars = append(vars, [2]string{parts[0], parts[1]})
+			}
+		}
 	}
-	return dsn
+	
+	// Include STASHCONFIG (not STASH_ prefixed but relevant)
+	if stashConfig := os.Getenv("STASHCONFIG"); stashConfig != "" {
+		vars = append(vars, [2]string{"STASHCONFIG", stashConfig})
+	}
+	
+	// Sort alphabetically for consistent output
+	sort.Slice(vars, func(i, j int) bool {
+		return vars[i][0] < vars[j][0]
+	})
+	
+	return vars
 }
 
-func MaskAPIKey(key string) string {
-	if len(key) < 8 {
-		return "***"
-	}
-	return key[:4] + "..." + key[len(key)-4:]
-}
+
