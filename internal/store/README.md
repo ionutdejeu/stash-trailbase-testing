@@ -211,7 +211,7 @@ func main() {
     }
     fmt.Printf("Got: %q\n", got.Content)
 
-    // Search semantically
+    // Search semantically (returns scores in [0,1])
     queryVec := []float32{0.2, 0.3, /* ... */ 384 values}
     results, err := s.Search(ctx, store.Query{
         Vector:     queryVec,
@@ -220,6 +220,10 @@ func main() {
     })
     if err != nil {
         log.Fatal(err)
+    }
+
+    for _, result := range results {
+        fmt.Printf("  %s (score %.2f)\n", result.Record.Content, result.Score)
     }
 
     // Filter

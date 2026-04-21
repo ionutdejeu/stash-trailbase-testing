@@ -12,7 +12,7 @@ import (
 )
 
 // Search performs vector or text similarity search.
-func (s *Store) Search(ctx context.Context, q store.Query) ([]store.Record, error) {
+func (s *Store) Search(ctx context.Context, q store.Query) ([]store.SearchResult, error) {
 	if err := s.validateQuery(q); err != nil {
 		return nil, err
 	}
@@ -33,7 +33,7 @@ func (s *Store) Search(ctx context.Context, q store.Query) ([]store.Record, erro
 
 // searchVector performs vector similarity search.
 // If q.Text is also set, adds a full-text search filter (hybrid search).
-func (s *Store) searchVector(ctx context.Context, q store.Query) ([]store.Record, error) {
+func (s *Store) searchVector(ctx context.Context, q store.Query) ([]store.SearchResult, error) {
 	whereParts := []string{"deleted_at IS NULL"}
 	var params []any
 	currentParam := 1
@@ -70,13 +70,14 @@ func (s *Store) searchVector(ctx context.Context, q store.Query) ([]store.Record
 	queryParam := currentParam
 
 	sql := fmt.Sprintf(`
-		SELECT r.id, r.content, r.metadata, r.created_at, r.updated_at
+		SELECT r.id, r.content, r.metadata, r.created_at, r.updated_at,
+			LEAST(GREATEST(1 - (v.vector <=> $%d), 0), 1) AS score
 		FROM records r
 		INNER JOIN record_vectors v ON r.id = v.record_id
 		%s
 		ORDER BY v.vector <=> $%d
 		%s
-	`, whereClause, queryParam, s.buildLimitOffset(q.TopK, 0))
+	`, queryParam, whereClause, queryParam, s.buildLimitOffset(q.TopK, 0))
 
 	rows, err := s.db.Query(ctx, sql, params...)
 	if err != nil {
@@ -84,11 +85,11 @@ func (s *Store) searchVector(ctx context.Context, q store.Query) ([]store.Record
 	}
 	defer rows.Close()
 
-	return scanRecords(ctx, s, rows)
+	return scanSearchResults(ctx, s, rows)
 }
 
 // searchText performs full‑text search.
-func (s *Store) searchText(ctx context.Context, q store.Query) ([]store.Record, error) {
+func (s *Store) searchText(ctx context.Context, q store.Query) ([]store.SearchResult, error) {
 	sql, params, err := s.queryToSQL(q, 1)
 	if err != nil {
 		return nil, err
@@ -100,7 +101,16 @@ func (s *Store) searchText(ctx context.Context, q store.Query) ([]store.Record, 
 	}
 	defer rows.Close()
 
-	return scanRecords(ctx, s, rows)
+	records, err := scanRecords(ctx, s, rows)
+	if err != nil {
+		return nil, err
+	}
+
+	results := make([]store.SearchResult, len(records))
+	for i, record := range records {
+		results[i] = store.SearchResult{Record: record}
+	}
+	return results, nil
 }
 
 // List returns live records matching the filter.
@@ -470,6 +480,42 @@ func scanRecords(ctx context.Context, s *Store, rows pgx.Rows) ([]store.Record, 
 	}
 
 	return records, nil
+}
+
+// scanSearchResults converts query rows that include a score column into SearchResult slices.
+func scanSearchResults(ctx context.Context, s *Store, rows pgx.Rows) ([]store.SearchResult, error) {
+	var results []store.SearchResult
+	var recordIDs []string
+
+	for rows.Next() {
+		var r store.Record
+		var metadata map[string]any
+		var score float32
+
+		if err := rows.Scan(&r.ID, &r.Content, &metadata, &r.CreatedAt, &r.UpdatedAt, &score); err != nil {
+			return nil, err
+		}
+
+		r.Metadata = metadata
+		results = append(results, store.SearchResult{Record: r, Score: score})
+		recordIDs = append(recordIDs, r.ID)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	if len(recordIDs) > 0 {
+		vectorsByRecord, err := s.loadVectorsBatch(ctx, recordIDs)
+		if err != nil {
+			return nil, err
+		}
+		for i := range results {
+			results[i].Record.Vectors = vectorsByRecord[results[i].Record.ID]
+		}
+	}
+
+	return results, nil
 }
 
 // safeCursorName generates a safe SQL identifier for cursor names.

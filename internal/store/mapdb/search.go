@@ -8,7 +8,7 @@ import (
 )
 
 // Search performs vector or text similarity search.
-func (s *Store) Search(ctx context.Context, q store.Query) ([]store.Record, error) {
+func (s *Store) Search(ctx context.Context, q store.Query) ([]store.SearchResult, error) {
 	if s.txState != nil {
 		return s.txSearch(ctx, q)
 	}
@@ -16,7 +16,7 @@ func (s *Store) Search(ctx context.Context, q store.Query) ([]store.Record, erro
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	var records []*store.Record
+	var results []store.SearchResult
 
 	// Vector search
 	if q.Vector != nil && q.VectorName != "" {
@@ -24,32 +24,30 @@ func (s *Store) Search(ctx context.Context, q store.Query) ([]store.Record, erro
 		if limit <= 0 || limit > s.config.MaxResultSize {
 			limit = s.config.MaxResultSize
 		}
-		records = s.searchVectors(q.Vector, q.VectorName, limit)
+		results = s.searchVectors(q.Vector, q.VectorName, limit)
 	}
 
 	// Text search (basic substring matching)
-	if q.Text != "" && len(records) == 0 {
-		records = s.searchText(q.Text, q.TopK)
+	if q.Text != "" && len(results) == 0 {
+		records := s.searchText(q.Text, q.TopK)
+		results = make([]store.SearchResult, len(records))
+		for i, record := range records {
+			results[i] = store.SearchResult{Record: *record}
+		}
 	}
 
 	// Filter results if predicate provided
-	if q.Filter != nil && len(records) > 0 {
-		filtered := make([]*store.Record, 0, len(records))
-		for _, record := range records {
-			if s.evaluatePredicate(record, q.Filter).toBool() {
-				filtered = append(filtered, record)
+	if q.Filter != nil && len(results) > 0 {
+		filtered := make([]store.SearchResult, 0, len(results))
+		for _, result := range results {
+			if s.evaluatePredicate(&result.Record, q.Filter).toBool() {
+				filtered = append(filtered, result)
 			}
 		}
-		records = filtered
+		results = filtered
 	}
 
-	// Convert to slice of values
-	result := make([]store.Record, len(records))
-	for i, record := range records {
-		result[i] = *record
-	}
-
-	return result, nil
+	return results, nil
 }
 
 // List returns live records matching the filter.

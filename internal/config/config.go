@@ -22,7 +22,7 @@ type Config struct {
 	EmbeddingModel string `env:"STASH_EMBEDDING_MODEL,required"`
 
 	// Memory
-	FrameTTL time.Duration `env:"STASH_FRAME_TTL,required"`
+	ContextTTL time.Duration `env:"STASH_CONTEXT_TTL,required"`
 
 	// Server
 	HTTPAddr  string `env:"STASH_HTTP_ADDR,required"`

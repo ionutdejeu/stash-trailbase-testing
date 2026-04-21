@@ -11,12 +11,13 @@ type Event struct {
 	Content   string
 	Timestamp time.Time
 	Metadata  map[string]any
+	Score     float32
 }
 
-// Frame represents working memory — what is actively being thought about.
-// Single global frame for MVP, stored with fixed ID "_memory.working_frame".
-// Stored as a store.Record with _memory.type = "frame".
-type Frame struct {
+// WorkingMemory represents working memory — what is actively being thought about.
+// Single global working memory for MVP, stored with fixed ID "_memory.context".
+// Stored as a store.Record with _memory.type = "context".
+type WorkingMemory struct {
 	ID        string
 	Focus     string
 	EventIDs  []string

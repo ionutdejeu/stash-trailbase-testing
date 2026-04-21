@@ -33,6 +33,44 @@ func main() {
 				Usage:  "Show environment variables and configuration",
 				Action: EnvCmd,
 			},
+			{
+				Name:   "remember",
+				Usage:  "Store an event in memory",
+				Action: rememberCmd,
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:  "metadata",
+						Usage: "JSON metadata for the event",
+					},
+				},
+			},
+			{
+				Name:   "recall",
+				Usage:  "Search for relevant events",
+				Action: recallCmd,
+				Flags: []cli.Flag{
+					&cli.IntFlag{
+						Name:  "limit",
+						Usage: "Maximum number of results",
+						Value: 10,
+					},
+					&cli.BoolFlag{
+						Name:  "json",
+						Usage: "Output results as JSON",
+					},
+				},
+			},
+			{
+				Name:   "context",
+				Usage:  "View or update working memory context",
+				Action: contextCmd,
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:  "update",
+						Usage: "Update the focus of working memory",
+					},
+				},
+			},
 		},
 	}
 

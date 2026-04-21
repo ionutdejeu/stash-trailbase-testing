@@ -255,7 +255,7 @@ func TestRecall_ReturnsCorrectFields(t *testing.T) {
 	}
 }
 
-func TestFrame_CreatesNewFrame(t *testing.T) {
+func TestWorkingMemory_CreatesNewWorkingMemory(t *testing.T) {
 	s, cleanup := startStore(t)
 	defer cleanup()
 
@@ -266,20 +266,20 @@ func TestFrame_CreatesNewFrame(t *testing.T) {
 	defer mem.Close()
 
 	ctx := context.Background()
-	frame, err := mem.Frame(ctx, "weather conversation")
+	wm, err := mem.WorkingMemory(ctx, "weather conversation")
 	if err != nil {
-		t.Fatalf("Frame failed: %v", err)
+		t.Fatalf("WorkingMemory failed: %v", err)
 	}
 
-	if frame.ID != "_memory.working_frame" {
-		t.Errorf("expected frame ID, got %s", frame.ID)
+	if wm.ID != "_memory.context" {
+		t.Errorf("expected working memory ID, got %s", wm.ID)
 	}
-	if frame.Focus != "weather conversation" {
-		t.Errorf("expected focus, got %s", frame.Focus)
+	if wm.Focus != "weather conversation" {
+		t.Errorf("expected focus, got %s", wm.Focus)
 	}
 }
 
-func TestFrame_ReturnsSameFrame(t *testing.T) {
+func TestWorkingMemory_UpdatesWhenInputProvided(t *testing.T) {
 	s, cleanup := startStore(t)
 	defer cleanup()
 
@@ -290,25 +290,32 @@ func TestFrame_ReturnsSameFrame(t *testing.T) {
 	defer mem.Close()
 
 	ctx := context.Background()
-	frame1, err := mem.Frame(ctx, "first focus")
+	wm1, err := mem.WorkingMemory(ctx, "first focus")
 	if err != nil {
-		t.Fatalf("Frame failed: %v", err)
+		t.Fatalf("WorkingMemory failed: %v", err)
 	}
 
-	frame2, err := mem.Frame(ctx, "second focus")
+	wm2, err := mem.WorkingMemory(ctx, "second focus")
 	if err != nil {
-		t.Fatalf("Frame failed: %v", err)
+		t.Fatalf("WorkingMemory failed: %v", err)
 	}
 
-	if frame1.ID != frame2.ID {
-		t.Errorf("expected same frame ID, got %s vs %s", frame1.ID, frame2.ID)
+	if wm1.ID != wm2.ID {
+		t.Errorf("expected same working memory ID, got %s vs %s", wm1.ID, wm2.ID)
 	}
-	if frame1.CreatedAt.Unix() != frame2.CreatedAt.Unix() {
-		t.Errorf("expected same created_at (same second), got %v vs %v", frame1.CreatedAt, frame2.CreatedAt)
+	if wm1.CreatedAt.Unix() != wm2.CreatedAt.Unix() {
+		t.Errorf("expected same created_at (same second), got %v vs %v", wm1.CreatedAt, wm2.CreatedAt)
+	}
+	if wm2.Focus != "second focus" {
+		t.Errorf("expected focus to update to 'second focus', got %s", wm2.Focus)
+	}
+	if !wm2.UpdatedAt.After(wm1.UpdatedAt) && wm2.UpdatedAt.Equal(wm1.UpdatedAt) {
+		t.Errorf("expected updated_at to advance, got %v vs %v", wm2.UpdatedAt, wm1.UpdatedAt)
 	}
 }
+	
 
-func TestFrame_CreatesNewWhenExpired(t *testing.T) {
+func TestWorkingMemory_CreatesNewWhenExpired(t *testing.T) {
 	s, cleanup := startStore(t)
 	defer cleanup()
 
@@ -326,18 +333,18 @@ func TestFrame_CreatesNewWhenExpired(t *testing.T) {
 		embedder: mem.embedder,
 	}
 
-	frame1, err := mem.Frame(ctx, "first focus")
+	wm1, err := mem.WorkingMemory(ctx, "first focus")
 	if err != nil {
-		t.Fatalf("Frame failed: %v", err)
+		t.Fatalf("WorkingMemory failed: %v", err)
 	}
 
-	frame2, err := mem.Frame(ctx, "second focus")
+	wm2, err := mem.WorkingMemory(ctx, "second focus")
 	if err != nil {
-		t.Fatalf("Frame failed: %v", err)
+		t.Fatalf("WorkingMemory failed: %v", err)
 	}
 
-	if frame1.ID == frame2.ID && frame1.CreatedAt.Equal(frame2.CreatedAt) {
-		t.Error("expected new frame after expiry")
+	if wm1.ID == wm2.ID && wm1.CreatedAt.Equal(wm2.CreatedAt) {
+		t.Error("expected new working memory after expiry")
 	}
 }
 
@@ -423,7 +430,7 @@ func (f *failingStore) DeleteWhere(ctx context.Context, p *store.Predicate) (int
 	return f.inner.DeleteWhere(ctx, p)
 }
 
-func (f *failingStore) Search(ctx context.Context, q store.Query) ([]store.Record, error) {
+func (f *failingStore) Search(ctx context.Context, q store.Query) ([]store.SearchResult, error) {
 	return f.inner.Search(ctx, q)
 }
 
@@ -507,7 +514,7 @@ func (e *expiredStore) DeleteWhere(ctx context.Context, p *store.Predicate) (int
 	return e.inner.DeleteWhere(ctx, p)
 }
 
-func (e *expiredStore) Search(ctx context.Context, q store.Query) ([]store.Record, error) {
+func (e *expiredStore) Search(ctx context.Context, q store.Query) ([]store.SearchResult, error) {
 	return e.inner.Search(ctx, q)
 }
 

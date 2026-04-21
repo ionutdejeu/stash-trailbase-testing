@@ -38,6 +38,13 @@ type Record struct {
 	DeletedAt *time.Time
 }
 
+// SearchResult couples a stored record with its similarity score.
+// Score is normalized to [0,1], where higher is more similar.
+type SearchResult struct {
+	Record Record
+	Score  float32
+}
+
 // Vector is a named embedding.
 type Vector struct {
 	// Values is the embedding vector as float32 array.
@@ -161,7 +168,7 @@ type Store interface {
 	// Read operations
 
 	// Search performs vector or text similarity search.
-	Search(ctx context.Context, q Query) ([]Record, error)
+	Search(ctx context.Context, q Query) ([]SearchResult, error)
 
 	// List returns live records matching the filter.
 	List(ctx context.Context, f Filter) ([]Record, error)

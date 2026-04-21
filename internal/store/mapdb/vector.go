@@ -28,13 +28,8 @@ func cosineSimilarity(a, b []float32) float32 {
 	return dot / float32(math.Sqrt(float64(normA)*float64(normB)))
 }
 
-type searchResult struct {
-	record *store.Record
-	score  float32
-}
-
 // searchVectors performs vector similarity search.
-func (s *Store) searchVectors(vector []float32, vectorName string, limit int) []*store.Record {
+func (s *Store) searchVectors(vector []float32, vectorName string, limit int) []store.SearchResult {
 	if limit <= 0 || len(vector) != s.config.VectorDim {
 		return nil
 	}
@@ -44,18 +39,18 @@ func (s *Store) searchVectors(vector []float32, vectorName string, limit int) []
 		return nil
 	}
 
-	results := make([]searchResult, 0, len(entries))
+	results := make([]store.SearchResult, 0, len(entries))
 	for _, entry := range entries {
 		if s.deleted[entry.id] {
 			continue
 		}
 		score := cosineSimilarity(vector, entry.vector)
-		results = append(results, searchResult{entry.record, score})
+		results = append(results, store.SearchResult{Record: *entry.record, Score: score})
 	}
 
 	// Sort by similarity (descending)
 	sort.Slice(results, func(i, j int) bool {
-		return results[i].score > results[j].score
+		return results[i].Score > results[j].Score
 	})
 
 	// Apply limit
@@ -66,10 +61,5 @@ func (s *Store) searchVectors(vector []float32, vectorName string, limit int) []
 		limit = s.config.MaxResultSize
 	}
 
-	records := make([]*store.Record, limit)
-	for i := 0; i < limit; i++ {
-		records[i] = results[i].record
-	}
-
-	return records
+	return results[:limit]
 }

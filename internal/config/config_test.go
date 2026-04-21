@@ -19,7 +19,7 @@ STASH_EMBEDDER_DRIVER=openai
 STASH_OPENAI_API_KEY=test-key
 STASH_OPENAI_BASE_URL=https://api.openai.com/v1
 STASH_EMBEDDING_MODEL=text-embedding-3-small
-STASH_FRAME_TTL=1h
+STASH_CONTEXT_TTL=1h
 STASH_HTTP_ADDR=:8080
 STASH_LOG_LEVEL=info
 STASH_LOG_FORMAT=text
@@ -57,8 +57,8 @@ STASH_LOG_FORMAT=text
 	if cfg.EmbeddingModel != "text-embedding-3-small" {
 		t.Errorf("EmbeddingModel = %q, want %q", cfg.EmbeddingModel, "text-embedding-3-small")
 	}
-	if cfg.FrameTTL != time.Hour {
-		t.Errorf("FrameTTL = %v, want %v", cfg.FrameTTL, time.Hour)
+	if cfg.ContextTTL != time.Hour {
+		t.Errorf("ContextTTL = %v, want %v", cfg.ContextTTL, time.Hour)
 	}
 	if cfg.HTTPAddr != ":8080" {
 		t.Errorf("HTTPAddr = %q, want %q", cfg.HTTPAddr, ":8080")
@@ -80,7 +80,7 @@ func TestNewFromFile_LoadsFromEnvironment(t *testing.T) {
 	os.Setenv("STASH_OPENAI_API_KEY", "env-key")
 	os.Setenv("STASH_OPENAI_BASE_URL", "https://api.example.com/v1")
 	os.Setenv("STASH_EMBEDDING_MODEL", "model-test")
-	os.Setenv("STASH_FRAME_TTL", "30m")
+	os.Setenv("STASH_CONTEXT_TTL", "30m")
 	os.Setenv("STASH_HTTP_ADDR", ":9090")
 	os.Setenv("STASH_LOG_LEVEL", "debug")
 	os.Setenv("STASH_LOG_FORMAT", "json")
@@ -93,7 +93,7 @@ func TestNewFromFile_LoadsFromEnvironment(t *testing.T) {
 		os.Unsetenv("STASH_OPENAI_API_KEY")
 		os.Unsetenv("STASH_OPENAI_BASE_URL")
 		os.Unsetenv("STASH_EMBEDDING_MODEL")
-		os.Unsetenv("STASH_FRAME_TTL")
+		os.Unsetenv("STASH_CONTEXT_TTL")
 		os.Unsetenv("STASH_HTTP_ADDR")
 		os.Unsetenv("STASH_LOG_LEVEL")
 		os.Unsetenv("STASH_LOG_FORMAT")
@@ -131,8 +131,8 @@ func TestNewFromFile_LoadsFromEnvironment(t *testing.T) {
 	if cfg.EmbeddingModel != "model-test" {
 		t.Errorf("EmbeddingModel = %q, want %q", cfg.EmbeddingModel, "model-test")
 	}
-	if cfg.FrameTTL != 30*time.Minute {
-		t.Errorf("FrameTTL = %v, want %v", cfg.FrameTTL, 30*time.Minute)
+	if cfg.ContextTTL != 30*time.Minute {
+		t.Errorf("ContextTTL = %v, want %v", cfg.ContextTTL, 30*time.Minute)
 	}
 	if cfg.HTTPAddr != ":9090" {
 		t.Errorf("HTTPAddr = %q, want %q", cfg.HTTPAddr, ":9090")
@@ -167,7 +167,7 @@ STASH_EMBEDDER_DRIVER=openai
 STASH_OPENAI_API_KEY=test-key
 STASH_OPENAI_BASE_URL=https://api.openai.com/v1
 STASH_EMBEDDING_MODEL=text-embedding-3-small
-STASH_FRAME_TTL=1h
+STASH_CONTEXT_TTL=1h
 STASH_HTTP_ADDR=:8080
 STASH_LOG_LEVEL=info
 # Missing STASH_LOG_FORMAT
@@ -201,7 +201,7 @@ STASH_EMBEDDER_DRIVER=openai
 STASH_OPENAI_API_KEY=file-key
 STASH_OPENAI_BASE_URL=https://api.openai.com/v1
 STASH_EMBEDDING_MODEL=text-embedding-3-small
-STASH_FRAME_TTL=1h
+STASH_CONTEXT_TTL=1h
 STASH_HTTP_ADDR=:8080
 STASH_LOG_LEVEL=info
 STASH_LOG_FORMAT=text

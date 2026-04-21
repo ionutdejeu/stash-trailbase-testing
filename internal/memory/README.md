@@ -69,7 +69,7 @@ if err != nil {
 }
 
 // Manage working frame
-frame, err := mem.Frame(ctx, "user is planning a trip")
+wm, err := mem.WorkingMemory(ctx, "user is planning a trip")
 if err != nil {
     return err
 }
@@ -103,10 +103,9 @@ Retrieves events relevant to a query. Embeds the query text, searches store by v
 - `limit` must be > 0 (returns `ErrInvalidLimit` if <= 0)
 - Filters explicitly by `_memory.type = "event"`
 
-### Frame
+### WorkingMemory
 
-```go
-func (m *Memory) Frame(ctx context.Context, input string) (Frame, error)
+func (m *Memory) WorkingMemory(ctx context.Context, input string) (WorkingMemory, error)
 ```
 
 Returns the current working memory state.
@@ -141,7 +140,7 @@ map[string]any{
 }
 ```
 
-**Frame record (ID: `"_memory.working_frame"`):**
+**WorkingMemory record (ID: `"_memory.context"`):**
 ```go
 map[string]any{
     "_memory": map[string]any{
@@ -166,4 +165,4 @@ Requires `internal/store.Store` interface and `internal/embedder.Embedder` inter
 
 ## No Background Goroutines
 
-Memory never spawns background goroutines. Frame expiry is handled lazily on read — `Frame()` checks expiry when called, not on a timer.
+Memory never spawns background goroutines. WorkingMemory expiry is handled lazily on read — `WorkingMemory()` checks expiry when called, not on a timer.

@@ -159,7 +159,7 @@ func (s *Store) txDeleteWhere(ctx context.Context, p *store.Predicate) (int64, e
 	return count, nil
 }
 
-func (s *Store) txSearch(ctx context.Context, q store.Query) ([]store.Record, error) {
+func (s *Store) txSearch(ctx context.Context, q store.Query) ([]store.SearchResult, error) {
 	// For simplicity, create a temporary store with transaction state
 	temp := &Store{
 		config:  s.config,

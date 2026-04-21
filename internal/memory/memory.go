@@ -11,10 +11,10 @@ import (
 )
 
 const (
-	frameID       = "_memory.working_frame"
-	frameDuration = time.Hour
-	typeEvent     = "event"
-	typeFrame     = "frame"
+	contextID       = "_memory.context"
+	contextDuration = time.Hour
+	typeEvent       = "event"
+	typeContext     = "context"
 )
 
 var errMissingStore = errors.New("memory: store is required")
@@ -126,8 +126,8 @@ func (m *Memory) Recall(ctx context.Context, query string, limit int) ([]Event, 
 	}
 
 	events := make([]Event, 0, len(results))
-	for _, r := range results {
-		e, err := recordToEvent(r)
+	for _, result := range results {
+		e, err := recordToEvent(result.Record, result.Score)
 		if err != nil {
 			continue
 		}
@@ -137,30 +137,35 @@ func (m *Memory) Recall(ctx context.Context, query string, limit int) ([]Event, 
 	return events, nil
 }
 
-// Frame returns the current working memory state.
-// Creates a new frame if none exists.
-// Replaces the frame (lazy) if the existing one has expired.
-// input updates the Focus when a new frame is created.
+// WorkingMemory returns the current working memory state.
+// Creates a new working memory if none exists.
+// Replaces the working memory (lazy) if the existing one has expired.
+// When input is non-empty and a valid context exists, updates the focus,
+// re-searches for relevant events, and resets the expiry.
 // Does not start background goroutines.
-func (m *Memory) Frame(ctx context.Context, input string) (Frame, error) {
-	record, err := m.store.Get(ctx, frameID)
+func (m *Memory) WorkingMemory(ctx context.Context, input string) (WorkingMemory, error) {
+	record, err := m.store.Get(ctx, contextID)
 	if errors.Is(err, store.ErrNotFound) {
-		return m.createFrame(ctx, input)
+		return m.createWorkingMemory(ctx, input)
 	}
 	if err != nil {
-		return Frame{}, err
+		return WorkingMemory{}, err
 	}
 
-	frame, err := recordToFrame(record)
+	wm, err := recordToWorkingMemory(record)
 	if err != nil {
-		return Frame{}, err
+		return WorkingMemory{}, err
 	}
 
-	if time.Now().UTC().After(frame.ExpiresAt) {
-		return m.createFrame(ctx, input)
+	if time.Now().UTC().After(wm.ExpiresAt) {
+		return m.createWorkingMemory(ctx, input)
 	}
 
-	return frame, nil
+	if input != "" {
+		return m.updateWorkingMemory(ctx, wm, input)
+	}
+
+	return wm, nil
 }
 
 // Close releases any resources held by Memory.
@@ -168,38 +173,89 @@ func (m *Memory) Close() error {
 	return nil
 }
 
-func (m *Memory) createFrame(ctx context.Context, focus string) (Frame, error) {
+func (m *Memory) createWorkingMemory(ctx context.Context, focus string) (WorkingMemory, error) {
 	now := time.Now().UTC()
-	frame := Frame{
-		ID:        frameID,
+	wm := WorkingMemory{
+		ID:        contextID,
 		Focus:     focus,
 		EventIDs:  nil,
 		CreatedAt: now,
 		UpdatedAt: now,
-		ExpiresAt: now.Add(frameDuration),
+		ExpiresAt: now.Add(contextDuration),
+	}
+
+	if focus != "" {
+		events, err := m.Recall(ctx, focus, 10)
+		if err == nil {
+			wm.EventIDs = make([]string, 0, len(events))
+			for _, e := range events {
+				wm.EventIDs = append(wm.EventIDs, e.ID)
+			}
+		}
 	}
 
 	recordMeta := map[string]any{
 		"_memory": map[string]any{
-			"type":       typeFrame,
+			"type":       typeContext,
 			"focus":      focus,
-			"event_ids":  frame.EventIDs,
-			"created_at": frame.CreatedAt.Format(time.RFC3339),
-			"updated_at": frame.UpdatedAt.Format(time.RFC3339),
-			"expires_at": frame.ExpiresAt.Format(time.RFC3339),
+			"event_ids":  wm.EventIDs,
+			"created_at": wm.CreatedAt.Format(time.RFC3339),
+			"updated_at": wm.UpdatedAt.Format(time.RFC3339),
+			"expires_at": wm.ExpiresAt.Format(time.RFC3339),
 		},
 	}
 
 	record := store.Record{
-		ID:       frameID,
+		ID:       contextID,
 		Metadata: recordMeta,
 	}
 
 	if err := m.store.Put(ctx, record); err != nil {
-		return Frame{}, err
+		return WorkingMemory{}, err
 	}
 
-	return frame, nil
+	return wm, nil
+}
+
+func (m *Memory) updateWorkingMemory(ctx context.Context, existing WorkingMemory, focus string) (WorkingMemory, error) {
+	now := time.Now().UTC()
+	wm := WorkingMemory{
+		ID:        contextID,
+		Focus:     focus,
+		CreatedAt: existing.CreatedAt,
+		UpdatedAt: now,
+		ExpiresAt: now.Add(contextDuration),
+	}
+
+	events, err := m.Recall(ctx, focus, 10)
+	if err == nil {
+		wm.EventIDs = make([]string, 0, len(events))
+		for _, e := range events {
+			wm.EventIDs = append(wm.EventIDs, e.ID)
+		}
+	}
+
+	recordMeta := map[string]any{
+		"_memory": map[string]any{
+			"type":       typeContext,
+			"focus":      focus,
+			"event_ids":  wm.EventIDs,
+			"created_at": wm.CreatedAt.Format(time.RFC3339),
+			"updated_at": wm.UpdatedAt.Format(time.RFC3339),
+			"expires_at": wm.ExpiresAt.Format(time.RFC3339),
+		},
+	}
+
+	record := store.Record{
+		ID:       contextID,
+		Metadata: recordMeta,
+	}
+
+	if err := m.store.Put(ctx, record); err != nil {
+		return WorkingMemory{}, err
+	}
+
+	return wm, nil
 }
 
 func validateMetadata(metadata map[string]any) error {
@@ -214,11 +270,14 @@ func validateMetadata(metadata map[string]any) error {
 	return nil
 }
 
+// cosineSimilarity returns the cosine similarity between two vectors.
+// Both vectors must have the same length.
+
 func hasMemoryPrefix(key string) bool {
 	return len(key) >= 7 && key[:7] == "_memory"
 }
 
-func recordToEvent(r store.Record) (Event, error) {
+func recordToEvent(r store.Record, score float32) (Event, error) {
 	memMeta, ok := r.Metadata["_memory"].(map[string]any)
 	if !ok {
 		return Event{}, ErrEventNotFound
@@ -243,17 +302,18 @@ func recordToEvent(r store.Record) (Event, error) {
 		Content:   content,
 		Timestamp: timestamp,
 		Metadata:  callerMeta,
+		Score:     score,
 	}, nil
 }
 
-func recordToFrame(r store.Record) (Frame, error) {
+func recordToWorkingMemory(r store.Record) (WorkingMemory, error) {
 	memMeta, ok := r.Metadata["_memory"].(map[string]any)
 	if !ok {
-		return Frame{}, ErrEventNotFound
+		return WorkingMemory{}, ErrEventNotFound
 	}
 
 	focus, _ := memMeta["focus"].(string)
-	eventIDs, _ := memMeta["event_ids"].([]string)
+	eventIDs := parseStringSlice(memMeta["event_ids"])
 
 	createdAtStr, _ := memMeta["created_at"].(string)
 	updatedAtStr, _ := memMeta["updated_at"].(string)
@@ -270,7 +330,7 @@ func recordToFrame(r store.Record) (Frame, error) {
 		expiresAt, _ = time.Parse(time.RFC3339, expiresAtStr)
 	}
 
-	return Frame{
+	return WorkingMemory{
 		ID:        r.ID,
 		Focus:     focus,
 		EventIDs:  eventIDs,
@@ -278,4 +338,23 @@ func recordToFrame(r store.Record) (Frame, error) {
 		UpdatedAt: updatedAt,
 		ExpiresAt: expiresAt,
 	}, nil
+}
+
+func parseStringSlice(v any) []string {
+	if v == nil {
+		return nil
+	}
+	if ss, ok := v.([]string); ok {
+		return ss
+	}
+	if si, ok := v.([]any); ok {
+		result := make([]string, 0, len(si))
+		for _, item := range si {
+			if s, ok := item.(string); ok {
+				result = append(result, s)
+			}
+		}
+		return result
+	}
+	return nil
 }
