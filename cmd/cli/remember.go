@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/alash3al/stash/internal/actions"
 	"github.com/alash3al/stash/internal/bootstrap"
-	"github.com/alash3al/stash/internal/memory"
 	"github.com/urfave/cli/v3"
 )
 
@@ -19,7 +19,7 @@ func rememberCmd(ctx context.Context, cmd *cli.Command) error {
 
 	content := args.First()
 	if strings.TrimSpace(content) == "" {
-		return memory.ErrEmptyContent
+		return fmt.Errorf("content cannot be empty")
 	}
 
 	var metadata map[string]any
@@ -34,11 +34,19 @@ func rememberCmd(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("bootstrap context not available")
 	}
 
-	eventID, err := bc.Memory.Remember(ctx, content, metadata)
+	output, err := actions.CreateEvent(ctx, bc, actions.CreateEventInput{
+		Content:  content,
+		Metadata: metadata,
+	})
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Event stored: %s\n", eventID)
+	jsonOutput, err := json.Marshal(output)
+	if err != nil {
+		return fmt.Errorf("failed to marshal response: %w", err)
+	}
+	
+	fmt.Println(string(jsonOutput))
 	return nil
 }

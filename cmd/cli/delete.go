@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
+	"github.com/alash3al/stash/internal/actions"
 	"github.com/alash3al/stash/internal/bootstrap"
 	"github.com/urfave/cli/v3"
 )
@@ -24,10 +26,18 @@ func deleteCmd(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("bootstrap context not available")
 	}
 
-	if err := bc.Store.Delete(ctx, eventID); err != nil {
+	output, err := actions.DeleteEvent(ctx, bc, actions.DeleteEventInput{
+		ID: eventID,
+	})
+	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Event deleted: %s\n", eventID)
+	jsonOutput, err := json.Marshal(output)
+	if err != nil {
+		return fmt.Errorf("failed to marshal response: %w", err)
+	}
+	
+	fmt.Println(string(jsonOutput))
 	return nil
 }

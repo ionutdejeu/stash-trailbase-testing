@@ -55,27 +55,41 @@ STASH_HTTP_ADDR=:8080
 
 ### 4. Use It
 ```bash
-# Store an event
-./stash remember "met Alice at KubeCon 2024"
+# Store an event (aliases: remember)
+./stash events:create "met Alice at KubeCon 2024"
+# Output: {"id":"abc123","content":"met Alice at KubeCon 2024","metadata":null}
+
+./stash remember "met Alice at KubeCon 2024"  # alias
 
 # Store with metadata
-./stash remember "debugged auth issue" --metadata '{"component":"api-gateway","severity":"high"}'
+./stash events:create "debugged auth issue" --metadata '{"component":"api-gateway","severity":"high"}'
+# Output: {"id":"def456","content":"debugged auth issue","metadata":{"component":"api-gateway","severity":"high"}}
 
-# Search for relevant memories
-./stash recall "who did I meet at KubeCon?"
+# Search for relevant memories (aliases: recall)
+./stash events:search "who did I meet at KubeCon?" --limit 3
+# Output: [{"id":"abc123","content":"met Alice at KubeCon 2024","metadata":null,"score":0.92,...}]
 
-# View or update working context
-./stash context --update "working on authentication system"
-./stash context
+./stash recall "who did I meet at KubeCon?"  # alias
 
 # List recent events
-./stash list --limit 10
+./stash events:list --limit 10
+# Output: [{"id":"abc123","content":"met Alice at KubeCon 2024","metadata":null,...}]
 
 # Delete an event (soft delete)
-./stash delete <event-id>
+./stash events:delete <event-id>
+# Output: {"success":true,"deleted":1,"id":"<event-id>"}
 
 # Hard delete (purge)
-./stash purge <event-id>
+./stash events:purge <event-id>
+# Output: {"success":true,"purged":1,"id":"<event-id>"}
+
+# View working context
+./stash context:show
+# Output: {"id":"ctx123","focus":"working on authentication system","event_ids":["abc123"],...}
+
+# Update working context focus
+./stash context:update "working on authentication system"
+# Output: {"success":true,"focus":"working on authentication system","id":"ctx123"}
 
 # Show configuration
 ./stash env
@@ -111,15 +125,26 @@ Each layer knows nothing about the layers above it. The store doesn't know what 
 
 ## Commands
 
+**Note:** All commands return JSON output by default for easy parsing and integration.
+
+### Events
+| Command | Aliases | Description |
+|---------|---------|-------------|
+| `stash events:create <content>` | `remember` | Store an event with optional `--metadata` JSON |
+| `stash events:search <query>` | `recall` | Semantic search over events with `--limit` flag |
+| `stash events:list` | | List recent events with `--limit` flag |
+| `stash events:delete <id>` | | Soft-delete an event (can be undeleted) |
+| `stash events:purge <id>` | | Hard-delete an event (permanent) |
+
+### Context
 | Command | Description |
 |---------|-------------|
-| `stash remember <content>` | Store an event with optional `--metadata` JSON |
-| `stash recall <query>` | Semantic search over events with `--limit` and `--json` flags |
-| `stash context` | View current working memory (focus, timestamps, linked events) |
-| `stash context --update <focus>` | Update focus and auto-link relevant events |
-| `stash list` | List recent events with `--limit` and `--json` flags |
-| `stash delete <id>` | Soft-delete an event (can be undeleted) |
-| `stash purge <id>` | Hard-delete an event (permanent) |
+| `stash context:show` | View current working memory (focus, timestamps, linked events) |
+| `stash context:update <focus>` | Update focus and auto-link relevant events |
+
+### Configuration
+| Command | Description |
+|---------|-------------|
 | `stash env` | Show all `STASH_*` environment variables |
 
 ---

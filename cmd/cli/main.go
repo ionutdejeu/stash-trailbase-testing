@@ -34,66 +34,71 @@ func main() {
 				Action: EnvCmd,
 			},
 			{
-				Name:   "remember",
-				Usage:  "Store an event in memory",
-				Action: rememberCmd,
-				Flags: []cli.Flag{
-					&cli.StringFlag{
-						Name:  "metadata",
-						Usage: "JSON metadata for the event",
+				Name:  "events",
+				Usage: "Manage events",
+				Commands: []*cli.Command{
+					{
+						Name:    "create",
+						Aliases: []string{"remember"},
+						Usage:   "Store an event in memory",
+						Action:  rememberCmd,
+						Flags: []cli.Flag{
+							&cli.StringFlag{
+								Name:  "metadata",
+								Usage: "JSON metadata for the event",
+							},
+						},
+					},
+					{
+						Name:    "search",
+						Aliases: []string{"recall"},
+						Usage:   "Search for relevant events",
+						Action:  recallCmd,
+						Flags: []cli.Flag{
+							&cli.IntFlag{
+								Name:  "limit",
+								Usage: "Maximum number of results",
+								Value: 10,
+							},
+						},
+					},
+					{
+						Name:   "list",
+						Usage:  "List recent events",
+						Action: listCmd,
+						Flags: []cli.Flag{
+							&cli.IntFlag{
+								Name:  "limit",
+								Usage: "Maximum number of results",
+								Value: 20,
+							},
+						},
+					},
+					{
+						Name:   "delete",
+						Usage:  "Soft-delete an event by ID",
+						Action: deleteCmd,
+					},
+					{
+						Name:   "purge",
+						Usage:  "Hard-delete an event by ID",
+						Action: purgeCmd,
 					},
 				},
 			},
 			{
-				Name:   "recall",
-				Usage:  "Search for relevant events",
-				Action: recallCmd,
-				Flags: []cli.Flag{
-					&cli.IntFlag{
-						Name:  "limit",
-						Usage: "Maximum number of results",
-						Value: 10,
+				Name:  "context",
+				Usage: "Manage working memory context",
+				Commands: []*cli.Command{
+					{
+						Name:   "show",
+						Usage:  "View current working memory context",
+						Action: contextShowCmd,
 					},
-					&cli.BoolFlag{
-						Name:  "json",
-						Usage: "Output results as JSON",
-					},
-				},
-			},
-			{
-				Name:   "context",
-				Usage:  "View or update working memory context",
-				Action: contextCmd,
-				Flags: []cli.Flag{
-					&cli.StringFlag{
-						Name:  "update",
-						Usage: "Update the focus of working memory (empty string clears focus)",
-					},
-				},
-			},
-			{
-				Name:   "delete",
-				Usage:  "Soft-delete an event by ID",
-				Action: deleteCmd,
-			},
-			{
-				Name:   "purge",
-				Usage:  "Hard-delete an event by ID",
-				Action: purgeCmd,
-			},
-			{
-				Name:   "list",
-				Usage:  "List recent events",
-				Action: listCmd,
-				Flags: []cli.Flag{
-					&cli.IntFlag{
-						Name:  "limit",
-						Usage: "Maximum number of results",
-						Value: 20,
-					},
-					&cli.BoolFlag{
-						Name:  "json",
-						Usage: "Output results as JSON",
+					{
+						Name:   "update",
+						Usage:  "Update the focus of working memory",
+						Action: contextUpdateCmd,
 					},
 				},
 			},
