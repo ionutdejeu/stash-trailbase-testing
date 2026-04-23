@@ -131,6 +131,23 @@ func main() {
 				},
 			},
 			{
+				Name:   "server",
+				Usage:  "Start HTTP API server",
+				Action: serverCmd,
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:  "port",
+						Usage: "HTTP server port",
+						Value: "8080",
+					},
+					&cli.StringFlag{
+						Name:  "host",
+						Usage: "HTTP server host",
+						Value: "0.0.0.0",
+					},
+				},
+			},
+			{
 				Name:  "facts",
 				Usage: "Manage facts and cognitive processes",
 				Commands: []*cli.Command{
