@@ -980,3 +980,228 @@ func TestLinkEvents_InvalidMetadata(t *testing.T) {
 		t.Errorf("expected ErrInvalidMetadata, got %v", err)
 	}
 }
+
+func TestRememberWithTTL_Success(t *testing.T) {
+	s, cleanup := startStore(t)
+	defer cleanup()
+
+	mem, err := New(s, embedder.NewFake())
+	if err != nil {
+		t.Fatalf("failed to create memory: %v", err)
+	}
+	defer mem.Close()
+
+	ctx := context.Background()
+	ns := "test-ns"
+
+	eventID, err := mem.RememberWithTTL(ctx, ns, "temporary event", 1*time.Hour, nil)
+	if err != nil {
+		t.Fatalf("RememberWithTTL failed: %v", err)
+	}
+
+	if eventID == "" {
+		t.Fatal("expected event ID, got empty string")
+	}
+
+	// Verify event was stored with expiration
+	record, err := s.Get(ctx, eventID)
+	if err != nil {
+		t.Fatalf("store.Get failed: %v", err)
+	}
+
+	memMeta, ok := record.Metadata["_memory"].(map[string]any)
+	if !ok {
+		t.Fatal("missing _memory metadata")
+	}
+
+	if memMeta["expires_at"] == nil {
+		t.Fatal("expires_at not set in metadata")
+	}
+
+	// Parse and verify expires_at is roughly 1 hour in future
+	expiresAtStr, ok := memMeta["expires_at"].(string)
+	if !ok {
+		t.Fatal("expires_at is not a string")
+	}
+
+	expiresAt, err := time.Parse(time.RFC3339, expiresAtStr)
+	if err != nil {
+		t.Fatalf("failed to parse expires_at: %v", err)
+	}
+
+	now := time.Now().UTC()
+	if expiresAt.Before(now) || expiresAt.After(now.Add(2*time.Hour)) {
+		t.Errorf("expires_at is not approximately 1 hour from now: %v", expiresAt)
+	}
+}
+
+func TestRememberWithTTL_InvalidTTL(t *testing.T) {
+	s, cleanup := startStore(t)
+	defer cleanup()
+
+	mem, err := New(s, embedder.NewFake())
+	if err != nil {
+		t.Fatalf("failed to create memory: %v", err)
+	}
+	defer mem.Close()
+
+	ctx := context.Background()
+	ns := "test-ns"
+
+	// Zero TTL
+	_, err = mem.RememberWithTTL(ctx, ns, "content", 0, nil)
+	if err == nil {
+		t.Fatal("expected error for zero TTL, got nil")
+	}
+
+	// Negative TTL
+	_, err = mem.RememberWithTTL(ctx, ns, "content", -1*time.Hour, nil)
+	if err == nil {
+		t.Fatal("expected error for negative TTL, got nil")
+	}
+}
+
+func TestRecall_FiltersExpiredEvents(t *testing.T) {
+	s, cleanup := startStore(t)
+	defer cleanup()
+
+	mem, err := New(s, embedder.NewFake())
+	if err != nil {
+		t.Fatalf("failed to create memory: %v", err)
+	}
+	defer mem.Close()
+
+	ctx := context.Background()
+	ns := "test-ns"
+
+	// Create permanent event
+	permanentID, err := mem.Remember(ctx, ns, "permanent event", nil)
+	if err != nil {
+		t.Fatalf("Remember failed: %v", err)
+	}
+
+	// Create very short-lived event
+	expiredID, err := mem.RememberWithTTL(ctx, ns, "expired event", 10*time.Millisecond, nil)
+	if err != nil {
+		t.Fatalf("RememberWithTTL failed: %v", err)
+	}
+
+	// Create future-expiring event
+	futureID, err := mem.RememberWithTTL(ctx, ns, "future event", 1*time.Hour, nil)
+	if err != nil {
+		t.Fatalf("RememberWithTTL failed: %v", err)
+	}
+
+	// Sleep to let short-lived event expire
+	time.Sleep(50 * time.Millisecond)
+
+	// Search for "event" - should return permanent and future, not expired
+	events, err := mem.Recall(ctx, []string{ns}, "event", 10)
+	if err != nil {
+		t.Fatalf("Recall failed: %v", err)
+	}
+
+	// Check that expired event is not in results
+	for _, e := range events {
+		if e.ID == expiredID {
+			t.Errorf("expired event should not be in Recall results")
+		}
+	}
+
+	// Verify permanent and future are present
+	foundPermanent := false
+	foundFuture := false
+	for _, e := range events {
+		if e.ID == permanentID {
+			foundPermanent = true
+		}
+		if e.ID == futureID {
+			foundFuture = true
+		}
+	}
+
+	if !foundPermanent {
+		t.Error("permanent event should be in Recall results")
+	}
+	if !foundFuture {
+		t.Error("future-expiring event should be in Recall results")
+	}
+}
+
+func TestPurgeExpired_Success(t *testing.T) {
+	s, cleanup := startStore(t)
+	defer cleanup()
+
+	mem, err := New(s, embedder.NewFake())
+	if err != nil {
+		t.Fatalf("failed to create memory: %v", err)
+	}
+	defer mem.Close()
+
+	ctx := context.Background()
+	ns := "test-ns"
+
+	// Create some events
+	permanentID, _ := mem.Remember(ctx, ns, "permanent", nil)
+	expiredID1, _ := mem.RememberWithTTL(ctx, ns, "expired 1", 10*time.Millisecond, nil)
+	expiredID2, _ := mem.RememberWithTTL(ctx, ns, "expired 2", 10*time.Millisecond, nil)
+	futureID, _ := mem.RememberWithTTL(ctx, ns, "future", 1*time.Hour, nil)
+
+	// Sleep to ensure expiration
+	time.Sleep(50 * time.Millisecond)
+
+	// Purge expired
+	count, err := mem.PurgeExpired(ctx, []string{ns})
+	if err != nil {
+		t.Fatalf("PurgeExpired failed: %v", err)
+	}
+
+	if count != 2 {
+		t.Errorf("expected 2 events purged, got %d", count)
+	}
+
+	// Verify permanent and future still exist
+	if _, err := s.Get(ctx, permanentID); err != nil {
+		t.Errorf("permanent event should still exist: %v", err)
+	}
+	if _, err := s.Get(ctx, futureID); err != nil {
+		t.Errorf("future event should still exist: %v", err)
+	}
+
+	// Verify expired events are gone (hard deleted)
+	if _, err := s.Get(ctx, expiredID1); err == nil {
+		t.Error("expired event 1 should be deleted")
+	}
+	if _, err := s.Get(ctx, expiredID2); err == nil {
+		t.Error("expired event 2 should be deleted")
+	}
+}
+
+func TestPurgeExpired_MultipleNamespaces(t *testing.T) {
+	s, cleanup := startStore(t)
+	defer cleanup()
+
+	mem, err := New(s, embedder.NewFake())
+	if err != nil {
+		t.Fatalf("failed to create memory: %v", err)
+	}
+	defer mem.Close()
+
+	ctx := context.Background()
+
+	// Create expired events in two namespaces
+	mem.RememberWithTTL(ctx, "ns1", "expired in ns1", 10*time.Millisecond, nil)
+	mem.RememberWithTTL(ctx, "ns2", "expired in ns2", 10*time.Millisecond, nil)
+
+	time.Sleep(50 * time.Millisecond)
+
+	// Purge both namespaces
+	count, err := mem.PurgeExpired(ctx, []string{"ns1", "ns2"})
+	if err != nil {
+		t.Fatalf("PurgeExpired failed: %v", err)
+	}
+
+	if count != 2 {
+		t.Errorf("expected 2 events purged, got %d", count)
+	}
+}

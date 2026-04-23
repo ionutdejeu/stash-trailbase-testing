@@ -97,6 +97,64 @@ func (m *Memory) Remember(ctx context.Context, namespace, content string, metada
 	return eventID, nil
 }
 
+// RememberWithTTL stores an event that expires after ttl duration.
+// Generates UUID and embedding. Returns event ID.
+// ttl must be > 0.
+// metadata must not start with "_memory".
+func (m *Memory) RememberWithTTL(ctx context.Context, namespace, content string, ttl time.Duration, metadata map[string]any) (string, error) {
+	if content == "" {
+		return "", ErrEmptyContent
+	}
+	if ttl <= 0 {
+		return "", errors.New("memory: ttl must be > 0")
+	}
+	if err := validateMetadata(metadata); err != nil {
+		return "", err
+	}
+
+	vec, err := m.embedder.Embed(ctx, content)
+	if err != nil {
+		return "", err
+	}
+
+	eventID := uuid.New().String()
+	now := time.Now().UTC()
+	expiresAt := now.Add(ttl)
+
+	memMeta := map[string]any{
+		"type":       typeEvent,
+		"content":    content,
+		"timestamp":  now.Format(time.RFC3339),
+		"expires_at": expiresAt.Format(time.RFC3339),
+	}
+
+	recordMeta := map[string]any{
+		"_memory": memMeta,
+	}
+	for k, v := range metadata {
+		recordMeta[k] = v
+	}
+
+	record := store.Record{
+		ID:        eventID,
+		Namespace: namespace,
+		Content:   content,
+		Vectors: map[string]store.Vector{
+			m.embedder.Model(): {
+				Values: vec,
+				Model:  m.embedder.Model(),
+			},
+		},
+		Metadata: recordMeta,
+	}
+
+	if err := m.store.Put(ctx, record); err != nil {
+		return "", err
+	}
+
+	return eventID, nil
+}
+
 // Recall retrieves events relevant to a query.
 // Embeds the query, searches the store by vector similarity.
 // Returns at most limit events ordered by relevance.
@@ -128,9 +186,14 @@ func (m *Memory) Recall(ctx context.Context, namespaces []string, query string, 
 	}
 
 	events := make([]Event, 0, len(results))
+	now := time.Now().UTC()
 	for _, result := range results {
 		e, err := recordToEvent(result.Record, result.Score)
 		if err != nil {
+			continue
+		}
+		// Filter out expired events
+		if e.ExpiresAt != nil && e.ExpiresAt.Before(now) {
 			continue
 		}
 		events = append(events, e)
@@ -183,9 +246,14 @@ func (m *Memory) RecallWhere(ctx context.Context, namespaces []string, query str
 	}
 
 	events := make([]Event, 0, len(results))
+	now := time.Now().UTC()
 	for _, result := range results {
 		e, err := recordToEvent(result.Record, result.Score)
 		if err != nil {
+			continue
+		}
+		// Filter out expired events
+		if e.ExpiresAt != nil && e.ExpiresAt.Before(now) {
 			continue
 		}
 		events = append(events, e)
@@ -387,6 +455,67 @@ func (m *Memory) FindRelated(
 	return events, nil
 }
 
+// PurgeExpired hard-deletes all expired events in the given namespaces.
+// Returns count of deleted records.
+// Non-expiring events are never touched.
+// Safe to call frequently; idempotent.
+func (m *Memory) PurgeExpired(ctx context.Context, namespaces []string) (int64, error) {
+	if len(namespaces) == 0 {
+		return 0, nil
+	}
+
+	now := time.Now().UTC()
+	count := int64(0)
+
+	// For each namespace, find expired events and delete them
+	for _, ns := range namespaces {
+		// Query for events that have expired
+		filter := &store.Predicate{
+			And: []store.Predicate{
+				{
+					Field: "metadata._memory.type",
+					Op:    store.OpEq,
+					Value: typeEvent,
+				},
+				{
+					Field: "metadata._memory.expires_at",
+					Op:    store.OpExists,
+					Value: true,
+				},
+			},
+		}
+
+		// List expired events
+		records, err := m.store.List(ctx, store.Filter{
+			Namespaces: []string{ns},
+			Where:      filter,
+			Limit:      10000, // reasonable upper bound for one batch
+		})
+		if err != nil {
+			return count, err
+		}
+
+		// Check expiration and delete
+		for _, record := range records {
+			e, err := recordToEvent(record, 0)
+			if err != nil {
+				continue
+			}
+
+			// Only delete if actually expired
+			if e.ExpiresAt != nil && e.ExpiresAt.Before(now) {
+				if err := m.store.Delete(ctx, record.ID); err != nil {
+					// Log but continue
+					continue
+				}
+				count++
+			}
+		}
+	}
+
+	return count, nil
+}
+
 // Close releases any resources held by Memory.
 func (m *Memory) Close() error {
 	return nil
@@ -515,6 +644,14 @@ func recordToEvent(r store.Record, score float32) (Event, error) {
 		timestamp, _ = time.Parse(time.RFC3339, tsStr)
 	}
 
+	// Parse expires_at if present
+	var expiresAt *time.Time
+	if expiresAtStr, ok := memMeta["expires_at"].(string); ok && expiresAtStr != "" {
+		if et, err := time.Parse(time.RFC3339, expiresAtStr); err == nil {
+			expiresAt = &et
+		}
+	}
+
 	callerMeta := make(map[string]any)
 	for k, v := range r.Metadata {
 		if k != "_memory" {
@@ -527,6 +664,7 @@ func recordToEvent(r store.Record, score float32) (Event, error) {
 		Namespace: r.Namespace,
 		Content:   content,
 		Timestamp: timestamp,
+		ExpiresAt: expiresAt,
 		Metadata:  callerMeta,
 		Score:     score,
 	}, nil

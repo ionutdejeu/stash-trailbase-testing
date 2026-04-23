@@ -11,6 +11,7 @@ type Event struct {
 	Namespace string
 	Content   string
 	Timestamp time.Time
+	ExpiresAt *time.Time     // nil = forever, non-nil = expiration
 	Metadata  map[string]any
 	Score     float32
 }
