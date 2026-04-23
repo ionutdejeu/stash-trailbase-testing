@@ -47,3 +47,11 @@ const (
 	RelationTypeSimilarTo   = "similar_to"  // A is similar to B
 	RelationTypeReferences  = "references"  // A references B
 )
+
+// BulkRemember represents a single event for batch import.
+// Minimal structure: just content, optional metadata and TTL.
+type BulkRemember struct {
+	Content  string         // required, non-empty
+	Metadata map[string]any // optional caller metadata
+	TTL      *time.Duration // optional; nil = no expiry
+}

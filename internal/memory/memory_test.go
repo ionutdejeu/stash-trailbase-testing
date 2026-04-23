@@ -1205,3 +1205,157 @@ func TestPurgeExpired_MultipleNamespaces(t *testing.T) {
 		t.Errorf("expected 2 events purged, got %d", count)
 	}
 }
+
+func TestRememberMany_Success(t *testing.T) {
+	s, cleanup := startStore(t)
+	defer cleanup()
+
+	mem, err := New(s, embedder.NewFake())
+	if err != nil {
+		t.Fatalf("failed to create memory: %v", err)
+	}
+	defer mem.Close()
+
+	ctx := context.Background()
+	ns := "test-ns"
+
+	// Prepare batch
+	events := []BulkRemember{
+		{Content: "Event 1", Metadata: map[string]any{"type": "note"}},
+		{Content: "Event 2", Metadata: nil},
+		{Content: "Event 3", Metadata: map[string]any{"priority": "high"}},
+	}
+
+	count, err := mem.RememberMany(ctx, ns, events)
+	if err != nil {
+		t.Fatalf("RememberMany failed: %v", err)
+	}
+
+	if count != 3 {
+		t.Errorf("expected 3 events stored, got %d", count)
+	}
+
+	// Verify all events are searchable
+	results, err := mem.Recall(ctx, []string{ns}, "Event", 10)
+	if err != nil {
+		t.Fatalf("Recall failed: %v", err)
+	}
+
+	if len(results) != 3 {
+		t.Errorf("expected 3 events in recall, got %d", len(results))
+	}
+}
+
+func TestRememberMany_EmptyBatch(t *testing.T) {
+	s, cleanup := startStore(t)
+	defer cleanup()
+
+	mem, err := New(s, embedder.NewFake())
+	if err != nil {
+		t.Fatalf("failed to create memory: %v", err)
+	}
+	defer mem.Close()
+
+	count, err := mem.RememberMany(context.Background(), "test-ns", []BulkRemember{})
+	if err != nil {
+		t.Fatalf("RememberMany failed: %v", err)
+	}
+
+	if count != 0 {
+		t.Errorf("expected 0 events, got %d", count)
+	}
+}
+
+func TestRememberMany_TooLarge(t *testing.T) {
+	s, cleanup := startStore(t)
+	defer cleanup()
+
+	mem, err := New(s, embedder.NewFake())
+	if err != nil {
+		t.Fatalf("failed to create memory: %v", err)
+	}
+	defer mem.Close()
+
+	// Create batch larger than 10k
+	events := make([]BulkRemember, 10001)
+	for i := 0; i < 10001; i++ {
+		events[i] = BulkRemember{Content: "Event"}
+	}
+
+	_, err = mem.RememberMany(context.Background(), "test-ns", events)
+	if err == nil {
+		t.Fatal("expected error for batch > 10k, got nil")
+	}
+}
+
+func TestRememberMany_InvalidContent(t *testing.T) {
+	s, cleanup := startStore(t)
+	defer cleanup()
+
+	mem, err := New(s, embedder.NewFake())
+	if err != nil {
+		t.Fatalf("failed to create memory: %v", err)
+	}
+	defer mem.Close()
+
+	events := []BulkRemember{
+		{Content: "Valid event"},
+		{Content: ""}, // Invalid: empty
+		{Content: "Another valid"},
+	}
+
+	_, err = mem.RememberMany(context.Background(), "test-ns", events)
+	if err == nil {
+		t.Fatal("expected error for empty content, got nil")
+	}
+}
+
+func TestRememberMany_WithTTL(t *testing.T) {
+	s, cleanup := startStore(t)
+	defer cleanup()
+
+	mem, err := New(s, embedder.NewFake())
+	if err != nil {
+		t.Fatalf("failed to create memory: %v", err)
+	}
+	defer mem.Close()
+
+	ctx := context.Background()
+	ns := "test-ns"
+	ttl := 1 * time.Hour
+
+	// Create one more event without TTL to verify count
+	mem.Remember(ctx, ns, "Event permanent", nil)
+
+	events := []BulkRemember{
+		{Content: "Event with TTL", TTL: &ttl},
+	}
+
+	count, err := mem.RememberMany(ctx, ns, events)
+	if err != nil {
+		t.Fatalf("RememberMany failed: %v", err)
+	}
+
+	if count != 1 {
+		t.Errorf("expected 1 event stored, got %d", count)
+	}
+
+	// Verify total count (1 + 1 original)
+	allResults, _ := mem.Recall(ctx, []string{ns}, "Event", 10)
+	if len(allResults) < 1 {
+		t.Error("expected at least 1 result")
+	}
+
+	// Verify at least one has TTL set
+	hasTTL := false
+	for _, e := range allResults {
+		if e.ExpiresAt != nil {
+			hasTTL = true
+			break
+		}
+	}
+
+	if !hasTTL {
+		t.Error("expected at least one event with TTL")
+	}
+}

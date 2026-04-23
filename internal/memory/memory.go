@@ -3,6 +3,9 @@ package memory
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/alash3al/stash/internal/embedder"
@@ -514,6 +517,112 @@ func (m *Memory) PurgeExpired(ctx context.Context, namespaces []string) (int64, 
 	}
 
 	return count, nil
+}
+
+// RememberMany stores multiple events atomically using store.PutMany.
+// Generates UUIDs and embeddings for each.
+// Returns count of stored events.
+// Errors if any event is invalid (empty content, bad metadata).
+// Errors if count > 10,000.
+// All-or-nothing: if any embedding fails, entire batch is rolled back.
+func (m *Memory) RememberMany(ctx context.Context, namespace string, events []BulkRemember) (int, error) {
+	if len(events) == 0 {
+		return 0, nil
+	}
+
+	if len(events) > 10000 {
+		return 0, errors.New("memory: batch exceeds 10000 events")
+	}
+
+	// Validate all events first
+	for i, e := range events {
+		if strings.TrimSpace(e.Content) == "" {
+			return 0, fmt.Errorf("memory: event %d has empty content", i)
+		}
+		if err := validateMetadata(e.Metadata); err != nil {
+			return 0, fmt.Errorf("memory: event %d: %w", i, err)
+		}
+		if e.TTL != nil && *e.TTL <= 0 {
+			return 0, fmt.Errorf("memory: event %d has invalid TTL", i)
+		}
+	}
+
+	// Embed all events in parallel
+	type embeddingResult struct {
+		idx int
+		vec []float32
+		err error
+	}
+
+	resultChan := make(chan embeddingResult, len(events))
+	var wg sync.WaitGroup
+
+	for i, e := range events {
+		wg.Add(1)
+		go func(idx int, content string) {
+			defer wg.Done()
+			vec, err := m.embedder.Embed(ctx, content)
+			resultChan <- embeddingResult{idx, vec, err}
+		}(i, e.Content)
+	}
+
+	wg.Wait()
+	close(resultChan)
+
+	// Collect embeddings, check for errors
+	embeddings := make([][]float32, len(events))
+	for result := range resultChan {
+		if result.err != nil {
+			return 0, fmt.Errorf("memory: embedding failed for event %d: %w", result.idx, result.err)
+		}
+		embeddings[result.idx] = result.vec
+	}
+
+	// Build store records
+	records := make([]store.Record, len(events))
+	now := time.Now().UTC()
+
+	for i, e := range events {
+		eventID := uuid.New().String()
+
+		memMeta := map[string]any{
+			"type":      typeEvent,
+			"content":   e.Content,
+			"timestamp": now.Format(time.RFC3339),
+		}
+
+		if e.TTL != nil {
+			expiresAt := now.Add(*e.TTL)
+			memMeta["expires_at"] = expiresAt.Format(time.RFC3339)
+		}
+
+		recordMeta := map[string]any{
+			"_memory": memMeta,
+		}
+		for k, v := range e.Metadata {
+			recordMeta[k] = v
+		}
+
+		records[i] = store.Record{
+			ID:        eventID,
+			Namespace: namespace,
+			Content:   e.Content,
+			Vectors: map[string]store.Vector{
+				m.embedder.Model(): {
+					Values: embeddings[i],
+					Model:  m.embedder.Model(),
+				},
+			},
+			Metadata: recordMeta,
+		}
+	}
+
+	// Store all at once (atomic)
+	if err := m.store.PutMany(ctx, records); err != nil {
+		return 0, fmt.Errorf("memory: store.PutMany failed: %w", err)
+	}
+
+	return len(events), nil
 }
 
 // Close releases any resources held by Memory.
