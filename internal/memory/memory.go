@@ -1187,3 +1187,173 @@ func (m *Memory) FindContradictions(ctx context.Context, namespace string) ([]Co
 
 	return contradictions, nil
 }
+
+// Reflect produces a structured report of memory state in a namespace.
+// Groups facts by entity, detects contradictions, identifies gaps.
+// Used for human review: what do we know, what's inconsistent, what's missing?
+//
+// Reflection is observation-only: no facts are modified, no auto-actions.
+// Caller reviews the report and decides what to do.
+//
+// Returns error only if store access fails; always returns a report (possibly empty).
+func (m *Memory) Reflect(ctx context.Context, namespace string) (*ReflectionReport, error) {
+	// Query all facts in namespace
+	filter := store.Filter{
+		Namespaces: []string{namespace},
+		Where: &store.Predicate{
+			Field: "metadata._memory.type",
+			Op:    store.OpEq,
+			Value: typeFact,
+		},
+	}
+
+	records, err := m.store.List(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse facts and group by entity
+	entities := make(map[string]*EntitySummary)
+	var allFacts []*Fact
+	var earliestFact *time.Time
+	var latestFact *time.Time
+
+	for i := range records {
+		fact, err := FactFromRecord(&records[i])
+		if err != nil {
+			continue // Skip unparseable facts
+		}
+
+		allFacts = append(allFacts, fact)
+
+		// Track date range
+		if earliestFact == nil || fact.ValidFrom.Before(*earliestFact) {
+			earliestFact = &fact.ValidFrom
+		}
+		if latestFact == nil || fact.ValidFrom.After(*latestFact) {
+			latestFact = &fact.ValidFrom
+		}
+		if fact.ValidUntil != nil && (latestFact == nil || fact.ValidUntil.After(*latestFact)) {
+			latestFact = fact.ValidUntil
+		}
+
+		// Extract entity and property
+		entity, _ := fact.Metadata["entity"].(string)
+		if entity == "" {
+			continue // Skip facts without entity
+		}
+
+		property, _ := fact.Metadata["property"].(string)
+		if property == "" {
+			continue // Skip facts without property
+		}
+
+		value, _ := fact.Metadata["value"].(string)
+
+		// Initialize entity summary if needed
+		if _, ok := entities[entity]; !ok {
+			entities[entity] = &EntitySummary{
+				Entity:     entity,
+				Properties: make(map[string][]FactValue),
+				Sources:    make(map[string]int),
+			}
+		}
+
+		// Add fact value to property
+		fv := FactValue{
+			Value:      value,
+			FactID:     fact.ID,
+			ValidFrom:  fact.ValidFrom,
+			ValidUntil: fact.ValidUntil,
+			Source:     fact.Source,
+		}
+		entities[entity].Properties[property] = append(entities[entity].Properties[property], fv)
+		entities[entity].FactCount++
+
+		// Track source
+		if fact.Source != "" {
+			entities[entity].Sources[fact.Source]++
+		} else {
+			entities[entity].Sources["unknown"]++
+		}
+
+		// Update date range
+		if entities[entity].FirstFact.IsZero() || fact.ValidFrom.Before(entities[entity].FirstFact) {
+			entities[entity].FirstFact = fact.ValidFrom
+		}
+		if entities[entity].LastFact.IsZero() || fact.ValidFrom.After(entities[entity].LastFact) {
+			entities[entity].LastFact = fact.ValidFrom
+		}
+	}
+
+	// Find contradictions
+	contradictions, _ := m.FindContradictions(ctx, namespace)
+
+	// Count contradictions per entity
+	for _, c := range contradictions {
+		if summary, ok := entities[c.Entity]; ok {
+			summary.ContradictionCount++
+		}
+	}
+
+	// Identify gaps: entities with <= 2 facts
+	gaps := []EntityGap{}
+	for entityName, summary := range entities {
+		if summary.FactCount <= 2 {
+			gap := EntityGap{
+				Entity:     entityName,
+				FactCount:  summary.FactCount,
+				Properties: len(summary.Properties),
+			}
+			gaps = append(gaps, gap)
+		}
+	}
+
+	// Sort gaps by fact count (fewest first)
+	sort.Slice(gaps, func(i, j int) bool {
+		if gaps[i].FactCount != gaps[j].FactCount {
+			return gaps[i].FactCount < gaps[j].FactCount
+		}
+		return gaps[i].Entity < gaps[j].Entity
+	})
+
+	// Build date range
+	var dateRange *DateRange
+	if earliestFact != nil {
+		dateRange = &DateRange{
+			From: *earliestFact,
+			To:   latestFact,
+		}
+	}
+
+	// Sort entities by name
+	sortedEntities := make([]string, 0, len(entities))
+	for name := range entities {
+		sortedEntities = append(sortedEntities, name)
+	}
+	sort.Strings(sortedEntities)
+
+	// Sort facts within each entity by valid_from time
+	for _, summary := range entities {
+		for _, factValues := range summary.Properties {
+			sort.Slice(factValues, func(i, j int) bool {
+				return factValues[i].ValidFrom.Before(factValues[j].ValidFrom)
+			})
+		}
+	}
+
+	// Build report
+	report := &ReflectionReport{
+		Namespace:           namespace,
+		TotalFacts:          len(allFacts),
+		TotalContradictions: len(contradictions),
+		TotalEntities:       len(entities),
+		EntitiesByName:      entities,
+		Contradictions:      contradictions,
+		Gaps:                gaps,
+		DateRange:           dateRange,
+		GeneratedAt:         time.Now().UTC(),
+	}
+
+	return report, nil
+}

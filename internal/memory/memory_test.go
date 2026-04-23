@@ -2128,3 +2128,473 @@ func ptrTime(t time.Time) *time.Time {
 
 // Debug test to understand metadata storage
 
+
+// Test reflection
+
+func TestReflect_EmptyNamespace(t *testing.T) {
+	mem, cleanup := startMemory(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Reflect on empty namespace
+	report, err := mem.Reflect(ctx, "empty-namespace")
+	if err != nil {
+		t.Fatalf("Reflect failed: %v", err)
+	}
+
+	if report == nil {
+		t.Fatal("report is nil")
+	}
+	if report.TotalFacts != 0 {
+		t.Errorf("expected 0 facts, got %d", report.TotalFacts)
+	}
+	if report.TotalEntities != 0 {
+		t.Errorf("expected 0 entities, got %d", report.TotalEntities)
+	}
+	if report.DateRange != nil {
+		t.Errorf("expected nil date range, got %v", report.DateRange)
+	}
+}
+
+func TestReflect_SingleEntity(t *testing.T) {
+	mem, cleanup := startMemory(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	ns := "test-reflect"
+	now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
+
+	// Create facts about Mohamed
+	factID1 := uuid.New().String()
+	factID2 := uuid.New().String()
+
+	fact1 := store.Record{
+		ID:        factID1,
+		Namespace: ns,
+		Content:   "Mohamed speaks French",
+		Vectors: map[string]store.Vector{
+			"fake": {Values: []float32{1, 0, 0, 0, 0, 0, 0, 0}, Model: "fake"},
+		},
+		Metadata: map[string]any{
+			"_memory": map[string]any{
+				"type":       "fact",
+				"valid_from": now.Format(time.RFC3339),
+				"valid_until": nil,
+				"source":     "consolidation",
+			},
+			"entity":   "Mohamed",
+			"property": "language",
+			"value":    "French",
+		},
+	}
+
+	fact2 := store.Record{
+		ID:        factID2,
+		Namespace: ns,
+		Content:   "Mohamed likes Go",
+		Vectors: map[string]store.Vector{
+			"fake": {Values: []float32{0, 1, 0, 0, 0, 0, 0, 0}, Model: "fake"},
+		},
+		Metadata: map[string]any{
+			"_memory": map[string]any{
+				"type":       "fact",
+				"valid_from": now.Add(time.Hour).Format(time.RFC3339),
+				"valid_until": nil,
+				"source":     "consolidation",
+			},
+			"entity":   "Mohamed",
+			"property": "favorite_language",
+			"value":    "Go",
+		},
+	}
+
+	mem.store.Put(ctx, fact1)
+	mem.store.Put(ctx, fact2)
+
+	// Reflect
+	report, err := mem.Reflect(ctx, ns)
+	if err != nil {
+		t.Fatalf("Reflect failed: %v", err)
+	}
+
+	if report.TotalFacts != 2 {
+		t.Errorf("expected 2 facts, got %d", report.TotalFacts)
+	}
+	if report.TotalEntities != 1 {
+		t.Errorf("expected 1 entity, got %d", report.TotalEntities)
+	}
+
+	// Check entity summary
+	mohamedSummary, ok := report.EntitiesByName["Mohamed"]
+	if !ok {
+		t.Fatal("Mohamed not in entities")
+	}
+	if mohamedSummary.FactCount != 2 {
+		t.Errorf("expected Mohamed to have 2 facts, got %d", mohamedSummary.FactCount)
+	}
+	if len(mohamedSummary.Properties) != 2 {
+		t.Errorf("expected 2 properties, got %d", len(mohamedSummary.Properties))
+	}
+	if mohamedSummary.Sources["consolidation"] != 2 {
+		t.Errorf("expected 2 consolidation sources, got %d", mohamedSummary.Sources["consolidation"])
+	}
+
+	// Check date range
+	if report.DateRange == nil {
+		t.Fatal("date range is nil")
+	}
+	if !report.DateRange.From.Equal(now) {
+		t.Errorf("expected from=%v, got %v", now, report.DateRange.From)
+	}
+}
+
+func TestReflect_MultipleEntities(t *testing.T) {
+	mem, cleanup := startMemory(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	ns := "test-reflect"
+	now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
+
+	// Create facts about 3 entities
+	for _, entityName := range []string{"Mohamed", "Ali", "Fatima"} {
+		fact := store.Record{
+			ID:        uuid.New().String(),
+			Namespace: ns,
+			Content:   fmt.Sprintf("%s fact", entityName),
+			Vectors: map[string]store.Vector{
+				"fake": {Values: []float32{1, 0, 0, 0, 0, 0, 0, 0}, Model: "fake"},
+			},
+			Metadata: map[string]any{
+				"_memory": map[string]any{
+					"type":       "fact",
+					"valid_from": now.Format(time.RFC3339),
+					"valid_until": nil,
+					"source":     "consolidation",
+				},
+				"entity":   entityName,
+				"property": "name",
+				"value":    entityName,
+			},
+		}
+		mem.store.Put(ctx, fact)
+	}
+
+	// Reflect
+	report, err := mem.Reflect(ctx, ns)
+	if err != nil {
+		t.Fatalf("Reflect failed: %v", err)
+	}
+
+	if report.TotalFacts != 3 {
+		t.Errorf("expected 3 facts, got %d", report.TotalFacts)
+	}
+	if report.TotalEntities != 3 {
+		t.Errorf("expected 3 entities, got %d", report.TotalEntities)
+	}
+
+	// Check entities are present
+	expectedEntities := []string{"Mohamed", "Ali", "Fatima"}
+	for _, name := range expectedEntities {
+		if _, ok := report.EntitiesByName[name]; !ok {
+			t.Errorf("entity %q not found", name)
+		}
+	}
+}
+
+func TestReflect_IncludesContradictions(t *testing.T) {
+	mem, cleanup := startMemory(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	ns := "test-reflect"
+	now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
+
+	// Create contradicting facts
+	fact1 := store.Record{
+		ID:        uuid.New().String(),
+		Namespace: ns,
+		Content:   "Mohamed speaks French",
+		Vectors: map[string]store.Vector{
+			"fake": {Values: []float32{1, 0, 0, 0, 0, 0, 0, 0}, Model: "fake"},
+		},
+		Metadata: map[string]any{
+			"_memory": map[string]any{
+				"type":       "fact",
+				"valid_from": now.Format(time.RFC3339),
+				"valid_until": nil,
+				"source":     "consolidation",
+			},
+			"entity":   "Mohamed",
+			"property": "language",
+			"value":    "French",
+		},
+	}
+
+	fact2 := store.Record{
+		ID:        uuid.New().String(),
+		Namespace: ns,
+		Content:   "Mohamed speaks Spanish",
+		Vectors: map[string]store.Vector{
+			"fake": {Values: []float32{0, 1, 0, 0, 0, 0, 0, 0}, Model: "fake"},
+		},
+		Metadata: map[string]any{
+			"_memory": map[string]any{
+				"type":       "fact",
+				"valid_from": now.Add(time.Minute).Format(time.RFC3339),
+				"valid_until": now.Add(time.Hour).Format(time.RFC3339),
+				"source":     "consolidation",
+			},
+			"entity":   "Mohamed",
+			"property": "language",
+			"value":    "Spanish",
+		},
+	}
+
+	mem.store.Put(ctx, fact1)
+	mem.store.Put(ctx, fact2)
+
+	// Reflect
+	report, err := mem.Reflect(ctx, ns)
+	if err != nil {
+		t.Fatalf("Reflect failed: %v", err)
+	}
+
+	if report.TotalContradictions != 1 {
+		t.Errorf("expected 1 contradiction, got %d", report.TotalContradictions)
+	}
+
+	// Check entity's contradiction count
+	mohamedSummary, ok := report.EntitiesByName["Mohamed"]
+	if !ok {
+		t.Fatal("Mohamed not found")
+	}
+	if mohamedSummary.ContradictionCount != 1 {
+		t.Errorf("expected 1 contradiction for Mohamed, got %d", mohamedSummary.ContradictionCount)
+	}
+}
+
+func TestReflect_IdentifiesGaps(t *testing.T) {
+	mem, cleanup := startMemory(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	ns := "test-reflect"
+	now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
+
+	// Create facts: Mohamed (1 fact), Ali (2 facts), Fatima (3 facts)
+	entities := []struct {
+		name     string
+		factCount int
+	}{
+		{"Mohamed", 1},
+		{"Ali", 2},
+		{"Fatima", 3},
+	}
+
+	for _, e := range entities {
+		for i := 0; i < e.factCount; i++ {
+			fact := store.Record{
+				ID:        uuid.New().String(),
+				Namespace: ns,
+				Content:   fmt.Sprintf("%s fact %d", e.name, i),
+				Vectors: map[string]store.Vector{
+					"fake": {Values: []float32{1, 0, 0, 0, 0, 0, 0, 0}, Model: "fake"},
+				},
+				Metadata: map[string]any{
+					"_memory": map[string]any{
+						"type":       "fact",
+						"valid_from": now.Add(time.Duration(i) * time.Hour).Format(time.RFC3339),
+						"valid_until": nil,
+						"source":     "consolidation",
+					},
+					"entity":   e.name,
+					"property": fmt.Sprintf("prop%d", i),
+					"value":    fmt.Sprintf("val%d", i),
+				},
+			}
+			mem.store.Put(ctx, fact)
+		}
+	}
+
+	// Reflect
+	report, err := mem.Reflect(ctx, ns)
+	if err != nil {
+		t.Fatalf("Reflect failed: %v", err)
+	}
+
+	// Check gaps (entities with <= 2 facts)
+	if len(report.Gaps) != 2 {
+		t.Errorf("expected 2 gaps, got %d", len(report.Gaps))
+	}
+
+	// Gaps should be sorted by fact count (Mohamed has 1, Ali has 2)
+	if len(report.Gaps) >= 1 && report.Gaps[0].Entity != "Mohamed" {
+		t.Errorf("expected first gap to be Mohamed, got %s", report.Gaps[0].Entity)
+	}
+	if len(report.Gaps) >= 2 && report.Gaps[1].Entity != "Ali" {
+		t.Errorf("expected second gap to be Ali, got %s", report.Gaps[1].Entity)
+	}
+
+	// Fatima should not be in gaps (has 3 facts)
+	for _, gap := range report.Gaps {
+		if gap.Entity == "Fatima" {
+			t.Error("Fatima should not be in gaps")
+		}
+	}
+}
+
+func TestReflect_SourceTracking(t *testing.T) {
+	mem, cleanup := startMemory(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	ns := "test-reflect"
+	now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
+
+	// Create facts with different sources
+	sources := []string{"consolidation", "user", "import"}
+	for i, source := range sources {
+		fact := store.Record{
+			ID:        uuid.New().String(),
+			Namespace: ns,
+			Content:   fmt.Sprintf("Fact from %s", source),
+			Vectors: map[string]store.Vector{
+				"fake": {Values: []float32{1, 0, 0, 0, 0, 0, 0, 0}, Model: "fake"},
+			},
+			Metadata: map[string]any{
+				"_memory": map[string]any{
+					"type":       "fact",
+					"valid_from": now.Add(time.Duration(i) * time.Hour).Format(time.RFC3339),
+					"valid_until": nil,
+					"source":     source,
+				},
+				"entity":   "TestEntity",
+				"property": "prop",
+				"value":    "val",
+			},
+		}
+		mem.store.Put(ctx, fact)
+	}
+
+	// Reflect
+	report, err := mem.Reflect(ctx, ns)
+	if err != nil {
+		t.Fatalf("Reflect failed: %v", err)
+	}
+
+	testEntity := report.EntitiesByName["TestEntity"]
+	if testEntity == nil {
+		t.Fatal("TestEntity not found")
+	}
+
+	// Check sources
+	for _, source := range sources {
+		if testEntity.Sources[source] != 1 {
+			t.Errorf("expected 1 %s fact, got %d", source, testEntity.Sources[source])
+		}
+	}
+}
+
+func TestReflect_TemporalOrder(t *testing.T) {
+	mem, cleanup := startMemory(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	ns := "test-reflect"
+	baseTime := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
+
+	// Create facts in reverse order (newest first)
+	for i := 2; i >= 0; i-- {
+		validFrom := baseTime.Add(time.Duration(i) * time.Hour)
+		fact := store.Record{
+			ID:        uuid.New().String(),
+			Namespace: ns,
+			Content:   fmt.Sprintf("Fact at %v", validFrom),
+			Vectors: map[string]store.Vector{
+				"fake": {Values: []float32{1, 0, 0, 0, 0, 0, 0, 0}, Model: "fake"},
+			},
+			Metadata: map[string]any{
+				"_memory": map[string]any{
+					"type":       "fact",
+					"valid_from": validFrom.Format(time.RFC3339),
+					"valid_until": nil,
+					"source":     "consolidation",
+				},
+				"entity":   "TestEntity",
+				"property": fmt.Sprintf("prop%d", i),
+				"value":    fmt.Sprintf("val%d", i),
+			},
+		}
+		mem.store.Put(ctx, fact)
+	}
+
+	// Reflect
+	report, err := mem.Reflect(ctx, ns)
+	if err != nil {
+		t.Fatalf("Reflect failed: %v", err)
+	}
+
+	testEntity := report.EntitiesByName["TestEntity"]
+	if testEntity == nil {
+		t.Fatal("TestEntity not found")
+	}
+
+	// Check that facts in each property are sorted by time
+	for propName, factValues := range testEntity.Properties {
+		for i := 1; i < len(factValues); i++ {
+			if !factValues[i-1].ValidFrom.Before(factValues[i].ValidFrom) {
+				t.Errorf("property %q not sorted by time: %v should be before %v",
+					propName, factValues[i-1].ValidFrom, factValues[i].ValidFrom)
+			}
+		}
+	}
+}
+
+func TestReflect_FactsWithoutEntity(t *testing.T) {
+	mem, cleanup := startMemory(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	ns := "test-reflect"
+	now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
+
+	// Create a fact without entity (should be ignored in grouping)
+	fact := store.Record{
+		ID:        uuid.New().String(),
+		Namespace: ns,
+		Content:   "Fact without entity",
+		Vectors: map[string]store.Vector{
+			"fake": {Values: []float32{1, 0, 0, 0, 0, 0, 0, 0}, Model: "fake"},
+		},
+		Metadata: map[string]any{
+			"_memory": map[string]any{
+				"type":       "fact",
+				"valid_from": now.Format(time.RFC3339),
+				"valid_until": nil,
+				"source":     "consolidation",
+			},
+			// Missing "entity" field
+			"property": "prop",
+			"value":    "val",
+		},
+	}
+
+	mem.store.Put(ctx, fact)
+
+	// Reflect
+	report, err := mem.Reflect(ctx, ns)
+	if err != nil {
+		t.Fatalf("Reflect failed: %v", err)
+	}
+
+	// Fact should not be in entity grouping
+	if report.TotalEntities != 0 {
+		t.Errorf("expected 0 entities, got %d", report.TotalEntities)
+	}
+	// But reflection should still succeed
+	if report == nil {
+		t.Fatal("report is nil")
+	}
+}

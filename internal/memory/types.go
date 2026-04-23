@@ -193,3 +193,50 @@ func timeRangesOverlap(from1 time.Time, until1 *time.Time, from2 time.Time, unti
 
 	return from1.Before(*effectiveUntil2) && from2.Before(*effectiveUntil1)
 }
+
+// ReflectionReport summarizes the state of memory in a namespace.
+// Produced by Memory.Reflect() for human review and decision-making.
+type ReflectionReport struct {
+	Namespace           string                   // namespace analyzed
+	TotalFacts          int                      // count of facts
+	TotalContradictions int                      // count of contradictions
+	TotalEntities       int                      // count of unique entities
+	EntitiesByName      map[string]*EntitySummary // facts grouped by entity
+	Contradictions      []Contradiction          // all contradictions found
+	Gaps                []EntityGap              // entities with few facts
+	DateRange           *DateRange               // when facts span
+	GeneratedAt         time.Time                // when report was generated
+}
+
+// EntitySummary aggregates facts about a single entity.
+type EntitySummary struct {
+	Entity           string                  // entity name
+	FactCount        int                     // number of facts about this entity
+	Properties       map[string][]FactValue  // property → [values] (what we know)
+	ContradictionCount int                   // contradictions involving this entity
+	FirstFact        time.Time               // oldest fact
+	LastFact         time.Time               // newest fact
+	Sources          map[string]int          // source → count (where facts came from)
+}
+
+// FactValue represents a fact about entity/property.
+type FactValue struct {
+	Value      string     // the fact value
+	FactID     string     // which fact this came from
+	ValidFrom  time.Time  // when true
+	ValidUntil *time.Time // when stopped being true
+	Source     string     // where this came from
+}
+
+// EntityGap represents an entity with few facts (potential gap in knowledge).
+type EntityGap struct {
+	Entity     string // entity name
+	FactCount  int    // how many facts we have
+	Properties int    // how many distinct properties
+}
+
+// DateRange spans a time period.
+type DateRange struct {
+	From time.Time  // earliest fact
+	To   *time.Time // latest fact (nil if ongoing)
+}
