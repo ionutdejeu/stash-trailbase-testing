@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  # PostgreSQL with pgvector extension for semantic search
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: stash-postgres
+    environment:
+      POSTGRES_DB: stash
+      POSTGRES_USER: stash
+      POSTGRES_PASSWORD: stash_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stash"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - stash-network
+
+  # Optional: pgAdmin for database management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: stash-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@stash.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    networks:
+      - stash-network
+
+volumes:
+  postgres_data:
+
+networks:
+  stash-network:
+    driver: bridge
