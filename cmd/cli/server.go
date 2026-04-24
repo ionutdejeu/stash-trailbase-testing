@@ -48,29 +48,7 @@ type RecallFactsResponse struct {
 	Facts     []FactResponse   `json:"facts"`
 }
 
-type ExtractRelationshipsRequest struct {
-	Facts []string `json:"facts"`
-}
 
-type RelationshipResponse struct {
-	Subject  string `json:"subject"`
-	Relation string `json:"relation"`
-	Object   string `json:"object"`
-}
-
-type ExtractRelationshipsResponse struct {
-	Relationships []RelationshipResponse `json:"relationships"`
-}
-
-type ConsolidateRelationshipsRequest struct {
-	Namespace string `json:"namespace,omitempty"`
-	Limit     int    `json:"limit,omitempty"`
-}
-
-type ConsolidateRelationshipsResponse struct {
-	Message string `json:"message"`
-	Count   int    `json:"count"`
-}
 
 func serverCmd(ctx context.Context, cmd *cli.Command) error {
 	port := cmd.String("port")
@@ -87,11 +65,9 @@ func serverCmd(ctx context.Context, cmd *cli.Command) error {
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
 
-	// Routes
+	// Routes - Core agent operations only
 	e.POST("/api/v1/facts", addFactHandler(bc))
 	e.GET("/api/v1/facts", recallFactsHandler(bc))
-	e.POST("/api/v1/facts/relationships/extract", extractRelationshipsHandler(bc))
-	e.POST("/api/v1/facts/relationships/consolidate", consolidateRelationshipsHandler(bc))
 
 	// Health check
 	e.GET("/health", func(c echo.Context) error {
@@ -216,66 +192,4 @@ func recallFactsHandler(bc *bootstrap.Context) echo.HandlerFunc {
 	}
 }
 
-func extractRelationshipsHandler(bc *bootstrap.Context) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		var req ExtractRelationshipsRequest
-		// Use json decoder for Echo v4
-		if err := json.NewDecoder(c.Request().Body).Decode(&req); err != nil {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
-		}
 
-		if len(req.Facts) == 0 {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": "facts array is required"})
-		}
-
-		// Call LLM to extract relationships from each fact string
-		allRelationships := make([]RelationshipResponse, 0)
-		for _, factContent := range req.Facts {
-			relationships, err := bc.Reasoner.ReasonRelationships(c.Request().Context(), factContent)
-			if err != nil {
-				return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
-			}
-
-			for _, rel := range relationships {
-				allRelationships = append(allRelationships, RelationshipResponse{
-					Subject:  rel.FromEntity,
-					Relation: rel.RelationType,
-					Object:   rel.ToEntity,
-				})
-			}
-		}
-
-		response := ExtractRelationshipsResponse{
-			Relationships: allRelationships,
-		}
-
-		return c.JSON(http.StatusOK, response)
-	}
-}
-
-func consolidateRelationshipsHandler(bc *bootstrap.Context) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		var req ConsolidateRelationshipsRequest
-		// Use json decoder for Echo v4
-		if err := json.NewDecoder(c.Request().Body).Decode(&req); err != nil {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
-		}
-
-		if req.Limit <= 0 {
-			req.Limit = 100
-		}
-
-		// Consolidate relationships
-		count, err := bc.Memory.ConsolidateRelationships(c.Request().Context(), req.Namespace, req.Limit)
-		if err != nil {
-			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		}
-
-		response := ConsolidateRelationshipsResponse{
-			Message: "Relationships consolidated successfully",
-			Count:   count,
-		}
-
-		return c.JSON(http.StatusOK, response)
-	}
-}

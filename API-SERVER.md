@@ -2,6 +2,8 @@
 
 The Stash semantic memory system is now available as an HTTP API via the `stash server` CLI command.
 
+**API Philosophy:** The HTTP API exposes only the core agent operations (Remember and Recall). Administrative tasks like relationship consolidation are handled via CLI commands, which can be scheduled or run manually.
+
 ## Starting the Server
 
 ```bash
@@ -74,55 +76,28 @@ Query parameters:
 }
 ```
 
-### 3. Extract Relationships
-```
-POST /api/v1/facts/relationships/extract
-Content-Type: application/json
+## Administrative Operations (CLI Only)
 
-{
-  "facts": [
-    "Alice works at TechCorp",
-    "Bob manages Alice"
-  ]
-}
-```
+For batch processing, consolidation, and maintenance tasks, use the CLI:
 
-**Response (200):**
-```json
-{
-  "relationships": [
-    {
-      "subject": "Alice",
-      "relation": "works_at",
-      "object": "TechCorp"
-    },
-    {
-      "subject": "Bob",
-      "relation": "manages",
-      "object": "Alice"
-    }
-  ]
-}
+```bash
+# Extract and consolidate relationships from recent facts
+stash facts extract-relationships --namespace default --limit 100
+
+# Consolidate recent events into facts
+stash facts consolidate --namespace default --window 1h
+
+# Find contradictions
+stash facts contradictions --namespace default
+
+# Reflect on memory state
+stash facts reflect --namespace default
 ```
 
-### 4. Consolidate Relationships
-```
-POST /api/v1/facts/relationships/consolidate
-Content-Type: application/json
-
-{
-  "namespace": "default",
-  "limit": 100
-}
-```
-
-**Response (200):**
-```json
-{
-  "message": "Relationships consolidated successfully",
-  "count": 5
-}
-```
+These operations are intentionally CLI-only because:
+- They're background/scheduled tasks, not per-request operations
+- They may take significant time (LLM calls, batch processing)
+- They're administrative tools, not runtime agent needs
 
 ## Configuration
 
@@ -214,14 +189,7 @@ response = requests.get(
 )
 facts = response.json()["facts"]
 
-# Extract relationships
-response = requests.post(
-    f"{BASE_URL}/api/v1/facts/relationships/extract",
-    json={
-        "facts": ["Alice works at TechCorp", "Bob manages Alice"]
-    }
-)
-relationships = response.json()["relationships"]
+
 ```
 
 ### JavaScript/Node.js Example
@@ -246,13 +214,7 @@ async function recallFacts(query, ranked = true) {
   return response.data.facts;
 }
 
-async function extractRelationships(facts) {
-  const response = await axios.post(
-    `${BASE_URL}/api/v1/facts/relationships/extract`,
-    { facts }
-  );
-  return response.data.relationships;
-}
+
 ```
 
 ## Performance Notes
