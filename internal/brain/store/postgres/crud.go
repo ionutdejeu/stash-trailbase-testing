@@ -59,15 +59,15 @@ func (s *Store) Get(ctx context.Context, id string) (store.Record, error) {
 	var metadata map[string]any
 
 	err := s.db.QueryRow(ctx, `
-		SELECT id, namespace, content, metadata, created_at, updated_at
+		SELECT id, namespace, content, metadata, created_at, updated_at, _row_id
 		FROM records
 		WHERE id = $1 AND deleted_at IS NULL
-	`, id).Scan(&r.ID, &r.Namespace, &r.Content, &metadata, &r.CreatedAt, &r.UpdatedAt)
-	if err != nil {
+	`, id).Scan(&r.ID, &r.Namespace, &r.Content, &metadata, &r.CreatedAt, &r.UpdatedAt, &r.RowID)
+if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return store.Record{}, store.ErrNotFound
 		}
-		return store.Record{}, fmt.Errorf("postgres: get record: %w", err)
+		return store.Record{}, fmt.Errorf("postgres: get: %w", err)
 	}
 
 	r.Metadata = metadata

@@ -245,6 +245,8 @@ func fieldToExpr(field string) (string, error) {
 		return "updated_at", nil
 	case "deleted_at":
 		return "deleted_at", nil
+	case "_row_id":
+		return "_row_id", nil
 	default:
 		// Assume metadata path
 		if strings.HasPrefix(field, "metadata.") {
@@ -385,7 +387,7 @@ func (s *Store) queryToSQL(q store.Query, paramStart int) (string, []any, error)
 	}
 
 	return fmt.Sprintf(`
-		SELECT r.id, r.namespace, r.content, r.metadata, r.created_at, r.updated_at
+		SELECT r.id, r.namespace, r.content, r.metadata, r.created_at, r.updated_at, r._row_id
 		FROM records r
 		%s
 		%s

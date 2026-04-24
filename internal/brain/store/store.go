@@ -40,6 +40,11 @@ type Record struct {
 	// DeletedAt is nil for live records, non-nil for soft-deleted records.
 	// Soft-deleted records are invisible to all read operations.
 	DeletedAt *time.Time
+
+	// RowID is an internal monotonic identifier used for ordering and pagination.
+	// Implementation-specific (e.g., PostgreSQL BIGSERIAL). May be zero for stores
+	// that don't support it or for backward compatibility.
+	RowID int64
 }
 
 // SearchResult couples a stored record with its similarity score.

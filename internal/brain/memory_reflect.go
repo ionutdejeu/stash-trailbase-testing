@@ -93,9 +93,7 @@ func (b *Brain) Reflect(ctx context.Context, namespace string) (*Report, error) 
 		}
 	}
 
-	// Get pipeline stats
-	queueDepth, lastRun, lastSuccess, lastError := b.PipelineStats()
-
+// Pipeline stats removed - consolidation is now explicit
 	return &Report{
 		Namespace:           namespace,
 		TotalFacts:          int(factCount),
@@ -105,11 +103,11 @@ func (b *Brain) Reflect(ctx context.Context, namespace string) (*Report, error) 
 		EntitiesByName:      entities,
 		Contradictions:      contradictions,
 		Pipeline: PipelineStatus{
-			QueueDepth:  queueDepth,
-			LastRun:     lastRun,
-			LastSuccess: lastSuccess,
-			LastError:   lastError,
+			QueueDepth:  0,
+			LastRun:     time.Time{},
+			LastSuccess: false,
+			LastError:   "consolidation is now explicit (use 'stash consolidate' commands)",
 		},
-		GeneratedAt: time.Now().UTC(),
+		GeneratedAt: time.Now(),
 	}, nil
 }

@@ -27,6 +27,12 @@ type Config struct {
 	HTTPAddr  string `env:"STASH_HTTP_ADDR,required"`
 	LogLevel  string `env:"STASH_LOG_LEVEL,required"`
 	LogFormat string `env:"STASH_LOG_FORMAT,required"`
+
+	// Consolidation
+	ConsolidationBatchSize          int     `env:"STASH_CONSOLIDATION_BATCH_SIZE" envDefault:"100"`
+	ConsolidationMaxLLMCallsPerHour int     `env:"STASH_CONSOLIDATION_MAX_LLM_CALLS_PER_HOUR" envDefault:"100"`
+	ConsolidationSimilarityThreshold float64 `env:"STASH_CONSOLIDATION_SIMILARITY_THRESHOLD" envDefault:"0.85"`
+	ConsolidationWindow             string  `env:"STASH_CONSOLIDATION_WINDOW" envDefault:"168h"` // 7 days in hours
 }
 
 func NewFromFile(filename string) (*Config, error) {

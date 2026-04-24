@@ -43,7 +43,11 @@ Ranked retrieval combines semantic relevance (how close is this to what I asked?
 Over time, I notice patterns. I see disconnected facts that are really the same idea, or contradictions that need resolution. I use reasoning (via LLM) to synthesize these raw observations into beliefs—higher-level facts with confidence tracking.
 
 ```bash
-stash facts consolidate --window 1h
+# Run consolidation once
+stash consolidate run --namespace=default --window=1h
+
+# Or run as a background service
+stash consolidate serve --interval=5m
 ```
 
 I analyze recent observations, merge redundancy, detect contradictions, extract patterns. The result: cleaner, denser beliefs.
@@ -88,7 +92,7 @@ Confidence-ranked retrieval.
 
 ```bash
 # Consolidate observations into facts
-stash facts consolidate --namespace default
+stash consolidate run --namespace=default
 
 # Query facts by type
 stash facts query --type atemporal --limit 5
@@ -342,16 +346,17 @@ GET /api/v1/facts?query=employment&namespace=default&ranked=true&limit=10
 **Administrative Tasks** — CLI only:
 ```bash
 # Consolidate observations into facts
-stash facts consolidate --namespace default --window 1h
+stash consolidate run --namespace=default --window=1h
 
-# Extract relationships
-stash facts extract-relationships --namespace default --limit 100
+# Or run as background service
+stash consolidate serve --interval=5m
 
+# Extract relationships (part of consolidation)
 # Find contradictions
-stash facts contradictions --namespace default
+stash contradict --namespace=default
 
 # Reflect on memory state
-stash facts reflect --namespace default
+stash reflect --namespace=default
 ```
 
 Administrative operations are CLI-only because they're background/scheduled tasks, not per-request operations. They may take significant time (LLM calls, batch processing).
@@ -380,18 +385,20 @@ go test ./...
 ### Docker
 
 ```bash
-# Build image
-docker build -t stash:latest .
+# Clone and configure
+git clone https://github.com/alash3al/stash
+cd stash
+cp .env.example .env
+# Edit .env with your OpenAI API key
 
-# Run with PostgreSQL via docker-compose
-docker-compose up -d
+# Start everything (PostgreSQL + Stash server + Consolidation service)
+docker-compose up
 
-# Or run in production
+# Or run in production with just the server
 docker run -p 8080:8080 \
-  -e STASH_STORE_DRIVER=postgres \
-  -e STASH_STORE_POSTGRES_DSN="postgresql://stash:pass@postgres:5432/stash" \
+  -e STASH_POSTGRES_DSN="postgresql://stash:pass@postgres:5432/stash" \
   -e STASH_OPENAI_API_KEY=sk-... \
-  stash:latest server --host 0.0.0.0
+  ghcr.io/alash3al/stash:latest server --host 0.0.0.0
 ```
 
 ### Kubernetes

@@ -46,7 +46,7 @@ type Relationship struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
-// Contradiction represents two facts with incompatible values.
+// Contradiction represents conflicting facts about the same entity+property.
 type Contradiction struct {
 	ID           string    `json:"id"`
 	FactID1      string    `json:"fact_id_1"`
@@ -57,6 +57,37 @@ type Contradiction struct {
 	Value2       string    `json:"value_2"`
 	Status       string    `json:"status"` // "conflict" or "evolution"
 	DiscoveredAt time.Time `json:"discovered_at"`
+}
+
+// --- Checkpoint Types ---
+
+// Checkpoint tracks consolidation progress for a namespace.
+type Checkpoint struct {
+	Namespace          string    `json:"namespace"`
+	LastRowID          int64     `json:"last_row_id"`          // _row_id of last processed event
+	LastFactRowID      int64     `json:"last_fact_row_id"`     // _row_id of last processed fact
+	LastRun            time.Time `json:"last_run"`             // When consolidation last ran
+	EventsProcessed    int       `json:"events_processed"`     // Total events processed
+	FactsCreated       int       `json:"facts_created"`        // Total facts created
+	RelationshipsFound int       `json:"relationships_found"`  // Total relationships extracted
+	LLMCalls           int       `json:"llm_calls"`            // Total LLM calls made
+	LastError          string    `json:"last_error,omitempty"` // Last error message, if any
+}
+
+// ConsolidationMetrics tracks metrics for a single consolidation run.
+type ConsolidationMetrics struct {
+	Namespace          string        `json:"namespace"`
+	StartTime          time.Time     `json:"start_time"`
+	EndTime            time.Time     `json:"end_time"`
+	Duration           time.Duration `json:"duration_ms"`
+	EventsRead         int           `json:"events_read"`
+	EventsProcessed    int           `json:"events_processed"`
+	ClustersFound      int           `json:"clusters_found"`
+	FactsCreated       int           `json:"facts_created"`
+	RelationshipsFound int           `json:"relationships_found"`
+	LLMCalls           int           `json:"llm_calls"`
+	CostEstimate       float64       `json:"cost_estimate"` // Estimated cost in USD
+	Errors             []string      `json:"errors,omitempty"`
 }
 
 // Report summarizes memory state.
@@ -103,6 +134,7 @@ const (
 	typeFact         = "fact"
 	typeRelationship = "relationship"
 	typeContext      = "context"
+	typeCheckpoint   = "checkpoint"
 
 	FactTypeAtemporal   = "atemporal"
 	FactTypeState       = "state"
@@ -246,4 +278,81 @@ func relationshipFromRecord(r store.Record) (*Relationship, error) {
 		Source:       source,
 		CreatedAt:    createdAt,
 	}, nil
+}
+
+// checkpointFromRecord extracts a Checkpoint from a store.Record.
+func checkpointFromRecord(r store.Record) (*Checkpoint, error) {
+	memMeta, ok := r.Metadata["_memory"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("record metadata missing _memory field")
+	}
+
+	recType, ok := memMeta["type"].(string)
+	if !ok || recType != typeCheckpoint {
+		return nil, fmt.Errorf("record is not a checkpoint (type=%q)", recType)
+	}
+
+namespace, _ := memMeta["namespace"].(string)
+	lastRowID, _ := memMeta["last_row_id"].(float64)
+	lastFactRowID, _ := memMeta["last_fact_row_id"].(float64)
+
+	var lastRun time.Time
+	if ts, ok := memMeta["last_run"].(string); ok {
+		if parsed, err := time.Parse(time.RFC3339, ts); err == nil {
+			lastRun = parsed
+		}
+	}
+	if lastRun.IsZero() {
+		lastRun = r.CreatedAt
+	}
+
+	eventsProcessed, _ := memMeta["events_processed"].(float64)
+	factsCreated, _ := memMeta["facts_created"].(float64)
+	relationshipsFound, _ := memMeta["relationships_found"].(float64)
+	llmCalls, _ := memMeta["llm_calls"].(float64)
+
+	lastError, _ := memMeta["last_error"].(string)
+
+	return &Checkpoint{
+		Namespace:          namespace,
+		LastRowID:          int64(lastRowID),
+		LastFactRowID:      int64(lastFactRowID),
+		LastRun:            lastRun,
+		EventsProcessed:    int(eventsProcessed),
+		FactsCreated:       int(factsCreated),
+		RelationshipsFound: int(relationshipsFound),
+		LLMCalls:           int(llmCalls),
+		LastError:          lastError,
+	}, nil
+}
+
+// checkpointToRecord converts a Checkpoint to a store.Record.
+func checkpointToRecord(cp Checkpoint) store.Record {
+	now := time.Now().UTC()
+	
+	memMeta := map[string]any{
+		"type":               typeCheckpoint,
+		"namespace":          cp.Namespace,
+		"last_row_id":        cp.LastRowID,
+		"last_fact_row_id":   cp.LastFactRowID,
+		"last_run":           cp.LastRun.Format(time.RFC3339),
+		"events_processed":   cp.EventsProcessed,
+		"facts_created":      cp.FactsCreated,
+		"relationships_found": cp.RelationshipsFound,
+		"llm_calls":          cp.LLMCalls,
+	}
+	if cp.LastError != "" {
+		memMeta["last_error"] = cp.LastError
+	}
+
+	return store.Record{
+		ID:        fmt.Sprintf("checkpoint:%s", cp.Namespace),
+		Namespace: "_system:checkpoints",
+		Content:   fmt.Sprintf("Checkpoint for namespace %s", cp.Namespace),
+		Metadata: map[string]any{
+			"_memory": memMeta,
+		},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
 }

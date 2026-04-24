@@ -1,14 +1,13 @@
+version: '3.8'
+
 services:
-  # PostgreSQL with pgvector extension for semantic search
+  # Database
   postgres:
     image: pgvector/pgvector:pg16
-    container_name: stash-postgres
     environment:
       POSTGRES_DB: stash
       POSTGRES_USER: stash
       POSTGRES_PASSWORD: stash_dev_password
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -16,26 +15,45 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    networks:
-      - stash-network
 
-  # Optional: pgAdmin for database management
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    container_name: stash-pgadmin
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@stash.local
-      PGADMIN_DEFAULT_PASSWORD: admin
+  # Stash server (HTTP API)
+  stash:
+    image: ghcr.io/alash3al/stash:latest
+    build: .
+    command: ["server", "--host", "0.0.0.0", "--port", "8080"]
     ports:
-      - "5050:80"
+      - "8080:8080"
+    environment:
+      - STASH_POSTGRES_DSN=postgresql://stash:stash_dev_password@postgres:5432/stash?sslmode=disable
+      - STASH_OPENAI_API_KEY=${STASH_OPENAI_API_KEY}
+      - STASH_OPENAI_BASE_URL=${STASH_OPENAI_BASE_URL}
+      - STASH_EMBEDDING_MODEL=${STASH_EMBEDDING_MODEL}
+      - STASH_REASONER_MODEL=${STASH_REASONER_MODEL}
     depends_on:
-      - postgres
-    networks:
-      - stash-network
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/stash", "env"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Consolidation service (background)
+  consolidator:
+    image: ghcr.io/alash3al/stash:latest
+    command: ["consolidate", "serve", "--interval=5m"]
+    environment:
+      - STASH_POSTGRES_DSN=postgresql://stash:stash_dev_password@postgres:5432/stash?sslmode=disable
+      - STASH_OPENAI_API_KEY=${STASH_OPENAI_API_KEY}
+      - STASH_OPENAI_BASE_URL=${STASH_OPENAI_BASE_URL}
+      - STASH_EMBEDDING_MODEL=${STASH_EMBEDDING_MODEL}
+      - STASH_REASONER_MODEL=${STASH_REASONER_MODEL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      stash:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   postgres_data:
-
-networks:
-  stash-network:
-    driver: bridge

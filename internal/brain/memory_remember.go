@@ -57,12 +57,6 @@ func (b *Brain) Remember(ctx context.Context, namespace, content string, metadat
 		return "", err
 	}
 
-	// Signal pipeline — non-blocking
-	select {
-	case b.pipelineCh <- namespace:
-	default:
-	}
-
 	return eventID, nil
 }
 

@@ -145,7 +145,7 @@ func (s *Store) List(ctx context.Context, f store.Filter) ([]store.Record, error
 	}
 
 	sql := fmt.Sprintf(`
-		SELECT id, namespace, content, metadata, created_at, updated_at
+		SELECT id, namespace, content, metadata, created_at, updated_at, _row_id
 		FROM records
 		WHERE %s
 		%s
@@ -211,7 +211,7 @@ func (s *Store) iterateWithCursor(ctx context.Context, f store.Filter) (<-chan s
 		// Note: cursor names cannot be parameterized, must use string formatting
 		// but safeCursorName() ensures safe identifier
 		declareSQL := fmt.Sprintf(`DECLARE "%s" CURSOR WITH HOLD FOR
-			SELECT id, namespace, content, metadata, created_at, updated_at
+			SELECT id, namespace, content, metadata, created_at, updated_at, _row_id
 			FROM records
 			WHERE %s
 			%s`, cursorName, where, orderBy)
@@ -358,7 +358,7 @@ func (s *Store) iterateWithPagination(ctx context.Context, f store.Filter) (<-ch
 			}
 
 			sql := fmt.Sprintf(`
-				SELECT id, namespace, content, metadata, created_at, updated_at
+				SELECT id, namespace, content, metadata, created_at, updated_at, _row_id
 				FROM records
 				WHERE %s
 				%s
@@ -508,7 +508,7 @@ func scanRecords(ctx context.Context, s *Store, rows pgx.Rows) ([]store.Record, 
 		var r store.Record
 		var metadata map[string]any
 
-		if err := rows.Scan(&r.ID, &r.Namespace, &r.Content, &metadata, &r.CreatedAt, &r.UpdatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.Namespace, &r.Content, &metadata, &r.CreatedAt, &r.UpdatedAt, &r.RowID); err != nil {
 			return nil, err
 		}
 
@@ -545,7 +545,7 @@ func scanSearchResults(ctx context.Context, s *Store, rows pgx.Rows) ([]store.Se
 		var metadata map[string]any
 		var score float32
 
-		if err := rows.Scan(&r.ID, &r.Namespace, &r.Content, &metadata, &r.CreatedAt, &r.UpdatedAt, &score); err != nil {
+		if err := rows.Scan(&r.ID, &r.Namespace, &r.Content, &metadata, &r.CreatedAt, &r.UpdatedAt, &r.RowID, &score); err != nil {
 			return nil, err
 		}
 

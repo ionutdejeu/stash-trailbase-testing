@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"time"
 
 	"github.com/alash3al/stash/internal/bootstrap"
 	"github.com/urfave/cli/v3"
@@ -101,6 +102,59 @@ func main() {
 					&cli.StringFlag{
 						Name:  "context",
 						Usage: "Context to check (optional)",
+					},
+				},
+			},
+			{
+				Name:    "consolidate",
+				Usage:   "Consolidate events into facts and extract relationships",
+				Commands: []*cli.Command{
+					{
+						Name:   "run",
+						Usage:  "Run consolidation once and exit",
+						Action: runConsolidateCmd,
+						Flags: []cli.Flag{
+							&cli.StringFlag{
+								Name:    "namespace",
+								Aliases: []string{"n"},
+								Value:   "default",
+								Usage:   "Namespace to consolidate",
+							},
+							&cli.DurationFlag{
+								Name:    "window",
+								Aliases: []string{"w"},
+								Value:   24 * time.Hour,
+								Usage:   "Lookback window for events",
+							},
+							&cli.BoolFlag{
+								Name:    "dry-run",
+								Aliases: []string{"d"},
+								Usage:   "Show what would be consolidated without running",
+							},
+						},
+					},
+					{
+						Name:   "serve",
+						Usage:  "Run consolidation as a background service",
+						Action: serveConsolidateCmd,
+						Flags: []cli.Flag{
+							&cli.DurationFlag{
+								Name:    "interval",
+								Aliases: []string{"i"},
+								Value:   5 * time.Minute,
+								Usage:   "Interval between consolidation runs",
+							},
+							&cli.StringSliceFlag{
+								Name:    "namespaces",
+								Aliases: []string{"n"},
+								Usage:   "Namespaces to consolidate (default: 'default')",
+							},
+						},
+					},
+					{
+						Name:   "status",
+						Usage:  "Show consolidation status",
+						Action: statusConsolidateCmd,
 					},
 				},
 			},

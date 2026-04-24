@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/alash3al/stash/internal/brain"
 	"github.com/alash3al/stash/internal/brain/store"
@@ -120,7 +121,19 @@ func New(ctx context.Context) (*Context, error) {
 		return nil, fmt.Errorf("build reasoner: %w", err)
 	}
 
-	br, err := brain.New(str, emb, reas)
+	// Parse consolidation window duration
+	consolidationWindow, err := time.ParseDuration(cfg.ConsolidationWindow)
+	if err != nil {
+		str.Close()
+		return nil, fmt.Errorf("parse consolidation window: %w", err)
+	}
+
+	br, err := brain.NewWithConfig(str, emb, reas, brain.ConsolidationConfig{
+		BatchSize:          cfg.ConsolidationBatchSize,
+		MaxLLMCallsPerHour: cfg.ConsolidationMaxLLMCallsPerHour,
+		SimilarityThreshold: cfg.ConsolidationSimilarityThreshold,
+		Window:             consolidationWindow,
+	})
 	if err != nil {
 		str.Close()
 		return nil, fmt.Errorf("build brain: %w", err)
