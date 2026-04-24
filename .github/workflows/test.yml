@@ -39,15 +39,30 @@ jobs:
           go-version: '1.25.0'
           cache: true
 
-      - name: Run Unit Tests
+      - name: Run User-Level Integration Tests
+        env:
+          STASH_STORE_DRIVER: postgres
+          STASH_STORE_DSN: postgres://stash:stash@localhost:5432/stash_test?sslmode=disable
+          STASH_VECTOR_DIM: 1536
+          STASH_MAX_RESULT_SIZE: 10000
+          STASH_EMBEDDER_DRIVER: openai
+          STASH_OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          STASH_OPENAI_BASE_URL: https://api.openai.com/v1
+          STASH_EMBEDDING_MODEL: text-embedding-3-small
+          STASH_REASONER_DRIVER: openai
+          STASH_REASONER_MODEL: gpt-4o-mini
+          STASH_CONTEXT_TTL: 1h
+          STASH_HTTP_ADDR: :8080
+          STASH_LOG_LEVEL: info
+          STASH_LOG_FORMAT: json
         run: |
-          go test ./... -v -race -coverprofile=coverage.out -covermode=atomic
-
-      - name: Upload Coverage
-        uses: codecov/codecov-action@v4
-        with:
-          files: ./coverage.out
-          fail_ci_if_error: false
+          # Build binary
+          go build -o /tmp/stash ./cmd/cli/
+          # Run integration test scripts
+          for script in test-phase3-*.sh; do
+            echo "Running $script..."
+            bash "$script" || exit 1
+          done
 
       - name: Check Code Format
         run: |
