@@ -510,39 +510,36 @@ STASH_CONTEXT_TTL=1h
 
 ## Testing
 
-**Philosophy:** Integration tests only. Real PostgreSQL, real OpenAI, real CLI. No fakes, no unit tests.
+### Unit Tests
 
-**Prerequisites:**
-```bash
-# Start PostgreSQL
-docker-compose up -d postgres
-
-# Set environment variables
-export STASH_STORE_DRIVER=postgres
-export STASH_STORE_POSTGRES_DSN=postgres://stash:stash_dev_password@localhost:5432/stash
-export STASH_OPENAI_API_KEY=sk-...
-```
-
-**Run all tests:**
 ```bash
 go test ./...
 ```
 
-**Run specific package:**
+With coverage:
 ```bash
-go test ./internal/brain -v
-go test ./internal/brain/store/postgres -v
+go test ./... -cover
 ```
 
-**Integration test scripts:**
+### Stress Test — Agent Workload Simulation
+
+Simulate realistic agent behavior: continuous remember/recall/consolidate/extract/graph operations.
+
 ```bash
-bash test-phase3-task0014.sh  # Temporal fact types
-bash test-phase3-task0015.sh  # Entity relationships
-bash test-phase3-task0016.sh  # Semantic consolidation
-bash test-phase3-task0017.sh  # Confidence-ranked retrieval
+# 60-second test with 4 concurrent agents
+./stress-test.sh 60 4
+
+# Heavy load: 5 minutes, 8 agents
+./stress-test.sh 300 8
 ```
 
-**Cost:** ~$0.01 per test run (mostly embeddings and LLM calls).
+The stress test reports:
+- Operations per second (remember, recall, consolidate, etc)
+- Total throughput
+- Error count
+- Pass/fail based on stability
+
+This verifies Stash can handle agent-like workload: high-frequency remember, periodic consolidation, real-time recall.
 
 ---
 
