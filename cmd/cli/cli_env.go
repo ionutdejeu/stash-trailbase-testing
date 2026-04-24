@@ -26,8 +26,17 @@ func EnvCmd(ctx context.Context, cmd *cli.Command) error {
 	t.SetStyle(table.StyleLight)
 	t.AppendHeader(table.Row{"Environment Variable", "Value"})
 
+	sensitiveSuffixes := []string{"KEY", "SECRET", "PASSWORD", "TOKEN", "DSN"}
+
 	for _, env := range vars {
-		t.AppendRow(table.Row{env[0], env[1]})
+		masked := env[1]
+		for _, suffix := range sensitiveSuffixes {
+			if strings.HasSuffix(env[0], suffix) && len(masked) > 4 {
+				masked = masked[:4] + strings.Repeat("*", len(masked)-4)
+				break
+			}
+		}
+		t.AppendRow(table.Row{env[0], masked})
 	}
 
 	t.Render()

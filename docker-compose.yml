@@ -16,19 +16,33 @@ services:
       timeout: 5s
       retries: 5
 
-  # Stash server (HTTP API)
+  # Stash server (HTTP + MCP + consolidation)
   stash:
-    image: ghcr.io/alash3al/stash:latest
     build: .
-    command: ["server", "--host", "0.0.0.0", "--port", "8080"]
+    command: ["serve", "--http-host", "0.0.0.0", "--http-port", "9090", "--mcp-host", "0.0.0.0", "--mcp-port", "8080"]
     ports:
-      - "8080:8080"
+      - "9090:9090"  # HTTP (metrics, health)
+      - "8080:8080"  # MCP SSE
     environment:
-      - STASH_POSTGRES_DSN=postgresql://stash:stash_dev_password@postgres:5432/stash?sslmode=disable
-      - STASH_OPENAI_API_KEY=${STASH_OPENAI_API_KEY}
-      - STASH_OPENAI_BASE_URL=${STASH_OPENAI_BASE_URL}
-      - STASH_EMBEDDING_MODEL=${STASH_EMBEDDING_MODEL}
-      - STASH_REASONER_MODEL=${STASH_REASONER_MODEL}
+      # Required
+      STASH_POSTGRES_DSN: postgresql://stash:stash_dev_password@postgres:5432/stash?sslmode=disable
+      STASH_VECTOR_DIM: 1536
+      STASH_MAX_RESULT_SIZE: 10000
+      STASH_OPENAI_API_KEY: ${STASH_OPENAI_API_KEY}
+      STASH_OPENAI_BASE_URL: ${STASH_OPENAI_BASE_URL}
+      STASH_EMBEDDING_MODEL: ${STASH_EMBEDDING_MODEL}
+      STASH_REASONER_MODEL: ${STASH_REASONER_MODEL}
+      STASH_CONTEXT_TTL: 1h
+      STASH_HTTP_ADDR: :9090
+      STASH_LOG_LEVEL: info
+      STASH_LOG_FORMAT: text
+      # Optional consolidation configs
+      STASH_CONSOLIDATION_BATCH_SIZE: 100
+      STASH_CONSOLIDATION_SIMILARITY_THRESHOLD: 0.85
+      STASH_CONSOLIDATION_DEDUP_THRESHOLD: 0.95
+      STASH_CONSOLIDATION_WINDOW: 168h
+      STASH_DECAY_FACTOR: 0.95
+      STASH_EXPIRY_THRESHOLD: 0.1
     depends_on:
       postgres:
         condition: service_healthy
@@ -37,22 +51,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-
-  # Consolidation service (background)
-  consolidator:
-    image: ghcr.io/alash3al/stash:latest
-    command: ["consolidate", "serve", "--interval=5m"]
-    environment:
-      - STASH_POSTGRES_DSN=postgresql://stash:stash_dev_password@postgres:5432/stash?sslmode=disable
-      - STASH_OPENAI_API_KEY=${STASH_OPENAI_API_KEY}
-      - STASH_OPENAI_BASE_URL=${STASH_OPENAI_BASE_URL}
-      - STASH_EMBEDDING_MODEL=${STASH_EMBEDDING_MODEL}
-      - STASH_REASONER_MODEL=${STASH_REASONER_MODEL}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      stash:
-        condition: service_healthy
     restart: unless-stopped
 
 volumes:

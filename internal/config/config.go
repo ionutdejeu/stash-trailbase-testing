@@ -29,10 +29,12 @@ type Config struct {
 	LogFormat string `env:"STASH_LOG_FORMAT,required"`
 
 	// Consolidation
-	ConsolidationBatchSize          int     `env:"STASH_CONSOLIDATION_BATCH_SIZE" envDefault:"100"`
-	ConsolidationMaxLLMCallsPerHour int     `env:"STASH_CONSOLIDATION_MAX_LLM_CALLS_PER_HOUR" envDefault:"100"`
+	ConsolidationBatchSize           int     `env:"STASH_CONSOLIDATION_BATCH_SIZE" envDefault:"100"`
 	ConsolidationSimilarityThreshold float64 `env:"STASH_CONSOLIDATION_SIMILARITY_THRESHOLD" envDefault:"0.85"`
-	ConsolidationWindow             string  `env:"STASH_CONSOLIDATION_WINDOW" envDefault:"168h"` // 7 days in hours
+	ConsolidationDedupThreshold      float64 `env:"STASH_CONSOLIDATION_DEDUP_THRESHOLD" envDefault:"0.95"`
+	ConsolidationWindow              string  `env:"STASH_CONSOLIDATION_WINDOW" envDefault:"168h"`
+	DecayFactor                      float64 `env:"STASH_DECAY_FACTOR" envDefault:"0.95"`
+	ExpiryThreshold                  float32 `env:"STASH_EXPIRY_THRESHOLD" envDefault:"0.1"`
 }
 
 func NewFromFile(filename string) (*Config, error) {

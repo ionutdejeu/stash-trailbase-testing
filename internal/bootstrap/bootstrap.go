@@ -9,149 +9,98 @@ import (
 	"time"
 
 	"github.com/alash3al/stash/internal/brain"
-	"github.com/alash3al/stash/internal/brain/store"
-	"github.com/alash3al/stash/internal/brain/store/postgres"
 	"github.com/alash3al/stash/internal/config"
+	"github.com/alash3al/stash/internal/db"
 	"github.com/alash3al/stash/internal/embedder"
+	"github.com/alash3al/stash/internal/queries"
 	"github.com/alash3al/stash/internal/reasoner"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// Context holds all initialized services.
 type Context struct {
 	Config *config.Config
 	Brain  *brain.Brain
+	Pool   *pgxpool.Pool
 	Logger *slog.Logger
 }
 
+// MustNew panics on bootstrap failure.
 func MustNew(ctx context.Context) *Context {
-	bootstrapCtx, err := New(ctx)
+	bc, err := New(ctx)
 	if err != nil {
 		panic(fmt.Sprintf("bootstrap failed: %v", err))
 	}
-	return bootstrapCtx
+	return bc
 }
 
+// New initializes all services: database, embedder, reasoner, queries, brain.
 func New(ctx context.Context) (*Context, error) {
 	cfg, err := loadConfig()
 	if err != nil {
 		return nil, fmt.Errorf("load config: %w", err)
 	}
 
-	var h slog.Handler
-	opts := &slog.HandlerOptions{}
+	logger := buildLogger(cfg)
 
-	lvl := slog.LevelInfo
-	switch cfg.LogLevel {
-	case "debug":
-		lvl = slog.LevelDebug
-	case "info":
-		lvl = slog.LevelInfo
-	case "warn":
-		lvl = slog.LevelWarn
-	case "error":
-		lvl = slog.LevelError
-	default:
-		return nil, fmt.Errorf("unknown log level: %q", cfg.LogLevel)
-	}
-	opts.Level = lvl
-
-	if cfg.LogFormat == "json" {
-		h = slog.NewJSONHandler(os.Stdout, opts)
-	} else {
-		h = slog.NewTextHandler(os.Stdout, opts)
-	}
-	logger := slog.New(h)
-
-	str, err := buildStore(ctx, cfg)
+	pool, err := db.Open(ctx, cfg.StoreDSN, cfg.EmbeddingModel, cfg.VectorDim)
 	if err != nil {
-		return nil, fmt.Errorf("build store: %w", err)
+		return nil, fmt.Errorf("open database: %w", err)
 	}
 
 	emb, err := buildEmbedder(cfg)
 	if err != nil {
-		str.Close()
+		pool.Close()
 		return nil, fmt.Errorf("build embedder: %w", err)
 	}
 
-	if emb.Dims() != cfg.VectorDim {
-		str.Close()
-		return nil, fmt.Errorf("vector dimension mismatch: embedder returns %d, config expects %d", emb.Dims(), cfg.VectorDim)
-	}
-
-	// Wrap embedder with store-backed cache
-	// Uses namespace "_cache:embeddings" - no interface changes to store
-	emb = embedder.NewCached(
-		emb,
-		// getRecord: try to get cached embedding
-		func(ctx context.Context, id string) (map[string][]float32, error) {
-			record, err := str.Get(ctx, id)
-			if err != nil {
-				return nil, err
-			}
-			// Extract just the vectors
-			vectors := make(map[string][]float32)
-			for model, vec := range record.Vectors {
-				vectors[model] = vec.Values
-			}
-			return vectors, nil
-		},
-		// putRecord: store embedding in cache namespace
-		func(ctx context.Context, id string, text string, vector []float32, model string) error {
-			return str.Put(ctx, store.Record{
-				ID:        id,
-				Namespace: "_cache:embeddings",
-				Content:   text,
-				Vectors: map[string]store.Vector{
-					model: {
-						Values: vector,
-						Model:  model,
-					},
-				},
-				Metadata: map[string]any{
-					"_memory": map[string]any{
-						"type": "cache",
-					},
-				},
-			})
-		},
-	)
+	// Wrap embedder with pgx-backed cache
+	cachedEmb := embedder.NewCached(emb, pool)
 
 	reas, err := buildReasoner(cfg)
 	if err != nil {
-		str.Close()
+		pool.Close()
 		return nil, fmt.Errorf("build reasoner: %w", err)
 	}
 
-	// Parse consolidation window duration
-	consolidationWindow, err := time.ParseDuration(cfg.ConsolidationWindow)
+	q, err := queries.New()
 	if err != nil {
-		str.Close()
+		pool.Close()
+		return nil, fmt.Errorf("load queries: %w", err)
+	}
+
+	window, err := time.ParseDuration(cfg.ConsolidationWindow)
+	if err != nil {
+		pool.Close()
 		return nil, fmt.Errorf("parse consolidation window: %w", err)
 	}
 
-	br, err := brain.NewWithConfig(str, emb, reas, brain.ConsolidationConfig{
-		BatchSize:          cfg.ConsolidationBatchSize,
-		MaxLLMCallsPerHour: cfg.ConsolidationMaxLLMCallsPerHour,
+	br, err := brain.New(pool, cachedEmb, reas, q, brain.Config{
+		BatchSize:           cfg.ConsolidationBatchSize,
 		SimilarityThreshold: cfg.ConsolidationSimilarityThreshold,
-		Window:             consolidationWindow,
+		DedupThreshold:      cfg.ConsolidationDedupThreshold,
+		Window:              window,
+		DecayFactor:         cfg.DecayFactor,
+		ExpiryThreshold:     cfg.ExpiryThreshold,
 	})
 	if err != nil {
-		str.Close()
+		pool.Close()
 		return nil, fmt.Errorf("build brain: %w", err)
 	}
 
 	return &Context{
 		Config: cfg,
 		Brain:  br,
+		Pool:   pool,
 		Logger: logger,
 	}, nil
 }
 
+// Close releases all resources.
 func (c *Context) Close() error {
 	var errs []string
 	if c.Brain != nil {
-		if err := c.Brain.Close(); err != nil {
-			errs = append(errs, fmt.Sprintf("brain: %v", err))
-		}
+		c.Brain.Close()
 	}
 	if len(errs) > 0 {
 		return fmt.Errorf("close errors: %s", strings.Join(errs, "; "))
@@ -167,14 +116,26 @@ func loadConfig() (*config.Config, error) {
 	return config.NewFromFile(filename)
 }
 
-func buildStore(ctx context.Context, cfg *config.Config) (store.Store, error) {
-	pgCfg := postgres.Config{
-		DSN:             cfg.StoreDSN,
-		VectorDim:       cfg.VectorDim,
-		IndexedMetadata: []string{}, // TODO: make configurable
-		MaxResultSize:   cfg.MaxResultSize,
+func buildLogger(cfg *config.Config) *slog.Logger {
+	opts := &slog.HandlerOptions{}
+
+	switch cfg.LogLevel {
+	case "debug":
+		opts.Level = slog.LevelDebug
+	case "info":
+		opts.Level = slog.LevelInfo
+	case "warn":
+		opts.Level = slog.LevelWarn
+	case "error":
+		opts.Level = slog.LevelError
+	default:
+		opts.Level = slog.LevelInfo
 	}
-	return postgres.New(pgCfg)
+
+	if cfg.LogFormat == "json" {
+		return slog.New(slog.NewJSONHandler(os.Stdout, opts))
+	}
+	return slog.New(slog.NewTextHandler(os.Stdout, opts))
 }
 
 func buildEmbedder(cfg *config.Config) (embedder.Embedder, error) {

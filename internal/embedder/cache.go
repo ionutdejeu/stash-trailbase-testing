@@ -7,70 +7,58 @@ import (
 	"log"
 	"sync"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pgvector/pgvector-go"
 )
 
-// Cached stores embeddings in a generic store using a special namespace.
-// Composes with store, doesn't extend it.
+// Cached wraps an Embedder with pgx-backed caching and request deduplication.
 type Cached struct {
-	embedder  Embedder
-	getRecord func(ctx context.Context, id string) (map[string][]float32, error)
-	putRecord func(ctx context.Context, id string, text string, vector []float32, model string) error
-
-	// Request deduplication to prevent duplicate API calls
-	inflight sync.Map // map[string]*call
+	embedder Embedder
+	pool     *pgxpool.Pool
+	inflight sync.Map
 }
 
-// call represents an in-flight embedding request.
 type call struct {
 	wg  sync.WaitGroup
 	vec []float32
 	err error
 }
 
-// NewCached creates a cached embedder using store operations.
-func NewCached(
-	e Embedder,
-	getRecord func(ctx context.Context, id string) (map[string][]float32, error),
-	putRecord func(ctx context.Context, id string, text string, vector []float32, model string) error,
-) *Cached {
+// NewCached creates a cached embedder that stores embeddings in the embedding_cache table.
+func NewCached(e Embedder, pool *pgxpool.Pool) *Cached {
 	return &Cached{
-		embedder:  e,
-		getRecord: getRecord,
-		putRecord: putRecord,
+		embedder: e,
+		pool:     pool,
 	}
 }
 
-// Embed returns cached embedding or calls the underlying embedder.
+// Embed returns a cached embedding or calls the underlying embedder.
 // Deduplicates concurrent requests for the same text.
 func (c *Cached) Embed(ctx context.Context, text string) ([]float32, error) {
 	hash := cacheKey(text)
 
-	// Try cache first
-	vectors, err := c.getRecord(ctx, hash)
-	if err == nil && vectors != nil {
-		if vec, ok := vectors[c.embedder.Model()]; ok && len(vec) > 0 {
-			return vec, nil
-		}
+	// Try cache
+	cached, err := c.getCached(ctx, hash, c.embedder.Model())
+	if err == nil && cached != nil {
+		return cached, nil
 	}
 
-	// Cache miss — check if someone else is already embedding this
+	// Check inflight dedup
 	callVal, loaded := c.inflight.LoadOrStore(hash, &call{})
 	callInfo := callVal.(*call)
 
 	if loaded {
-		// Someone else is already embedding this text, wait for them
 		callInfo.wg.Wait()
 		return callInfo.vec, callInfo.err
 	}
 
-	// We're the first — do the embedding
 	callInfo.wg.Add(1)
 	defer func() {
 		callInfo.wg.Done()
 		c.inflight.Delete(hash)
 	}()
 
-	// Call underlying embedder
 	vec, err := c.embedder.Embed(ctx, text)
 	if err != nil {
 		callInfo.err = err
@@ -79,12 +67,11 @@ func (c *Cached) Embed(ctx context.Context, text string) ([]float32, error) {
 
 	callInfo.vec = vec
 
-	// Store in cache synchronously with timeout (don't block caller indefinitely)
+	// Write cache in background with timeout
 	cacheCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := c.putRecord(cacheCtx, hash, text, vec, c.embedder.Model()); err != nil {
-		// Log but don't fail the request
+	if err := c.putCached(cacheCtx, hash, text, vec, c.embedder.Model()); err != nil {
 		log.Printf("embedder: cache write failed for hash %s: %v", hash[:8], err)
 	}
 
@@ -99,6 +86,27 @@ func (c *Cached) Model() string {
 // Dims returns the underlying embedder's dimensions.
 func (c *Cached) Dims() int {
 	return c.embedder.Dims()
+}
+
+func (c *Cached) getCached(ctx context.Context, hash, model string) ([]float32, error) {
+	var vec pgvector.Vector
+	err := c.pool.QueryRow(ctx,
+		"SELECT embedding FROM embedding_cache WHERE text_hash = $1 AND model = $2",
+		hash, model,
+	).Scan(&vec)
+	if err != nil {
+		return nil, err
+	}
+	return vec.Slice(), nil
+}
+
+func (c *Cached) putCached(ctx context.Context, hash, text string, vec []float32, model string) error {
+	_, err := c.pool.Exec(ctx,
+		`INSERT INTO embedding_cache (text_hash, model, text, embedding)
+		 VALUES ($1, $2, $3, $4) ON CONFLICT (text_hash, model) DO NOTHING`,
+		hash, model, text, pgvector.NewVector(vec),
+	)
+	return err
 }
 
 func cacheKey(text string) string {
