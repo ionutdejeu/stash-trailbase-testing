@@ -4,6 +4,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"log"
+	"sync"
+	"time"
 )
 
 // Cached stores embeddings in a generic store using a special namespace.
@@ -12,6 +15,16 @@ type Cached struct {
 	embedder  Embedder
 	getRecord func(ctx context.Context, id string) (map[string][]float32, error)
 	putRecord func(ctx context.Context, id string, text string, vector []float32, model string) error
+	
+	// Request deduplication to prevent duplicate API calls
+	inflight sync.Map // map[string]*call
+}
+
+// call represents an in-flight embedding request.
+type call struct {
+	wg  sync.WaitGroup
+	vec []float32
+	err error
 }
 
 // NewCached creates a cached embedder using store operations.
@@ -28,6 +41,7 @@ func NewCached(
 }
 
 // Embed returns cached embedding or calls the underlying embedder.
+// Deduplicates concurrent requests for the same text.
 func (c *Cached) Embed(ctx context.Context, text string) ([]float32, error) {
 	hash := cacheKey(text)
 
@@ -39,16 +53,40 @@ func (c *Cached) Embed(ctx context.Context, text string) ([]float32, error) {
 		}
 	}
 
-	// Cache miss — call underlying embedder
+	// Cache miss — check if someone else is already embedding this
+	callVal, loaded := c.inflight.LoadOrStore(hash, &call{})
+	callInfo := callVal.(*call)
+	
+	if loaded {
+		// Someone else is already embedding this text, wait for them
+		callInfo.wg.Wait()
+		return callInfo.vec, callInfo.err
+	}
+
+	// We're the first — do the embedding
+	callInfo.wg.Add(1)
+	defer func() {
+		callInfo.wg.Done()
+		c.inflight.Delete(hash)
+	}()
+
+	// Call underlying embedder
 	vec, err := c.embedder.Embed(ctx, text)
 	if err != nil {
+		callInfo.err = err
 		return nil, err
 	}
 
-	// Store in cache (fire and forget)
-	go func() {
-		c.putRecord(context.Background(), hash, text, vec, c.embedder.Model())
-	}()
+	callInfo.vec = vec
+
+	// Store in cache synchronously with timeout (don't block caller indefinitely)
+	cacheCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	
+	if err := c.putRecord(cacheCtx, hash, text, vec, c.embedder.Model()); err != nil {
+		// Log but don't fail the request
+		log.Printf("embedder: cache write failed for hash %s: %v", hash[:8], err)
+	}
 
 	return vec, nil
 }
