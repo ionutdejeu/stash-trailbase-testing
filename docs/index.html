@@ -1266,7 +1266,178 @@
         }
         .rag-note strong { color: var(--text); }
 
+        /* DEMO ANIMATION */
+        #howitworks { padding: 120px 0; border-top: 1px solid var(--border); }
+
+        .demo-terminal {
+            max-width: 860px;
+            margin: 0 auto;
+            border: 1px solid var(--border);
+            background: #080808;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 13px;
+        }
+        .demo-bar {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .demo-controls { margin-left: auto; }
+        .demo-btn {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 11px;
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-dim);
+            padding: 6px 14px;
+            cursor: pointer;
+            letter-spacing: 0.05em;
+            transition: all 0.2s;
+        }
+        .demo-btn:hover { border-color: var(--amber-dim); color: var(--amber); }
+
+        .demo-body {
+            padding: 28px 32px;
+            min-height: 420px;
+            line-height: 1.9;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .demo-line { display: flex; align-items: flex-start; gap: 10px; opacity: 0; transition: opacity 0.2s; }
+        .demo-line.visible { opacity: 1; }
+
+        .demo-line.user .dl-tag { color: #60a0e0; min-width: 70px; flex-shrink: 0; }
+        .demo-line.agent .dl-tag { color: var(--amber); min-width: 70px; flex-shrink: 0; }
+        .demo-line.stash .dl-tag { color: var(--green); min-width: 70px; flex-shrink: 0; }
+        .demo-line.system .dl-tag { color: var(--text-muted); min-width: 70px; flex-shrink: 0; }
+        .demo-line.divider .dl-tag { color: var(--text-muted); min-width: 70px; flex-shrink: 0; }
+
+        .demo-line.user .dl-text { color: #c0d8f0; }
+        .demo-line.agent .dl-text { color: var(--text); }
+        .demo-line.stash .dl-text { color: #80c090; }
+        .demo-line.system .dl-text { color: var(--text-muted); font-style: italic; }
+        .demo-line.divider .dl-text { color: var(--text-muted); letter-spacing: 0.1em; }
+
+        .demo-cursor {
+            display: inline-block;
+            width: 7px;
+            height: 13px;
+            background: var(--amber);
+            animation: blink 1s step-end infinite;
+            vertical-align: middle;
+            margin-left: 3px;
+        }
+
+        /* NAMESPACES */
+        #namespaces { padding: 120px 0; border-top: 1px solid var(--border); }
+
+        .ns-layout {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 80px;
+            align-items: start;
+        }
+        .ns-headline {
+            font-family: 'Fraunces', serif;
+            font-size: clamp(36px, 4vw, 56px);
+            font-weight: 700;
+            line-height: 1.05;
+            letter-spacing: -0.02em;
+            margin-bottom: 20px;
+        }
+        .ns-headline em { font-style: italic; font-weight: 300; color: var(--amber); }
+        .ns-body {
+            color: var(--text-dim);
+            font-size: 15px;
+            line-height: 1.8;
+            margin-bottom: 16px;
+        }
+        .ns-body code {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 13px;
+            color: var(--amber);
+            background: rgba(232,160,32,0.08);
+            padding: 1px 6px;
+        }
+        .ns-rule {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-top: 24px;
+            padding: 16px 20px;
+            border: 1px solid var(--amber-dim);
+            background: rgba(232,160,32,0.04);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 13px;
+            color: var(--amber);
+        }
+
+        /* Tree */
+        .ns-tree-wrap { display: flex; flex-direction: column; gap: 2px; }
+        .ns-tree {
+            border: 1px solid var(--border);
+            background: var(--surface);
+            overflow: hidden;
+        }
+        .ns-tree-label {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 11px;
+            color: var(--text-muted);
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            padding: 12px 20px;
+            border-bottom: 1px solid var(--border);
+            background: rgba(0,0,0,0.3);
+        }
+        .ns-tree-body { padding: 16px 0; }
+        .ns-node {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 7px 20px;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 13px;
+            transition: background 0.2s;
+            cursor: default;
+        }
+        .ns-node:hover { background: rgba(232,160,32,0.05); }
+        .ns-node.l1 { padding-left: 40px; }
+        .ns-node.l2 { padding-left: 64px; }
+        .ns-node-icon { flex-shrink: 0; font-size: 14px; }
+        .ns-node-path { color: var(--amber); min-width: 220px; }
+        .ns-node.root .ns-node-path { color: var(--text); }
+        .ns-node-desc { color: var(--text-muted); font-size: 11px; }
+
+        /* Feature cards */
+        .ns-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; }
+        .ns-feature-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            padding: 20px;
+            transition: all 0.3s;
+        }
+        .ns-feature-card:hover { border-color: var(--amber-dim); }
+        .ns-feature-icon { font-size: 22px; margin-bottom: 10px; }
+        .ns-feature-title { font-size: 13px; font-weight: 500; margin-bottom: 6px; }
+        .ns-feature-desc {
+            font-size: 12px;
+            color: var(--text-dim);
+            line-height: 1.6;
+        }
+        .ns-feature-desc code {
+            font-family: 'IBM Plex Mono', monospace;
+            color: var(--amber);
+            font-size: 11px;
+        }
+
         /* Mobile */
+
+
 
 
 
@@ -1277,7 +1448,9 @@
             .nav-links { display: none; }
             #hero { padding: 120px 24px 80px; }
             .container { padding: 0 24px; }
-            .rag-hero, .rag-explainer, .rag-analogy { grid-template-columns: 1fr; }
+            .ns-layout { grid-template-columns: 1fr; gap: 40px; }
+            .ns-cards { grid-template-columns: 1fr; }
+
             .rag-vs, .analogy-arrow { justify-content: center; padding-top: 0; }
 
 
@@ -1313,6 +1486,8 @@
     <div class="nav-logo">stash<span>.memory</span></div>
     <ul class="nav-links">
         <li><a href="#what">What</a></li>
+        <li><a href="#namespaces">Namespaces</a></li>
+        <li><a href="#howitworks">See It</a></li>
         <li><a href="#rag">vs RAG</a></li>
         <li><a href="#quickstart">Quick Start</a></li>
         <li><a href="#pipeline">Pipeline</a></li>
@@ -1476,7 +1651,120 @@
     </div>
 </section>
 
+<!-- NAMESPACES -->
+<section id="namespaces">
+    <div class="container">
+        <div class="ns-layout reveal">
+            <div class="ns-intro">
+                <div class="section-tag">Namespaces</div>
+                <h2 class="ns-headline">Memory organized<br>like <em>folders.</em></h2>
+                <p class="ns-body">Not all memory is equal. What your agent learns about <em>you</em> is different from what it learns about a <em>project</em>, which is different from what it knows about <em>itself</em>. Namespaces let the agent organize what it learns into clean, separate buckets — just like folders on your computer.</p>
+                <p class="ns-body">Each namespace is a path. Paths are hierarchical. Reading from <code>/projects</code> automatically includes everything under <code>/projects/stash</code>, <code>/projects/cartona</code>, and so on. You never have to think about it — the agent does.</p>
+                <div class="ns-rule">
+                    <span class="ns-rule-icon">📁</span>
+                    <span>Write to one namespace. Read from any subtree.</span>
+                </div>
+            </div>
+            <div class="ns-tree-wrap">
+                <div class="ns-tree">
+                    <div class="ns-tree-label">example namespace structure</div>
+                    <div class="ns-tree-body">
+                        <div class="ns-node root">
+                            <span class="ns-node-icon">📁</span>
+                            <span class="ns-node-path">/</span>
+                            <span class="ns-node-desc">everything</span>
+                        </div>
+                        <div class="ns-node l1">
+                            <span class="ns-node-icon">📁</span>
+                            <span class="ns-node-path">/users/alice</span>
+                            <span class="ns-node-desc">who alice is, her preferences</span>
+                        </div>
+                        <div class="ns-node l1">
+                            <span class="ns-node-icon">📁</span>
+                            <span class="ns-node-path">/projects</span>
+                            <span class="ns-node-desc">all projects</span>
+                        </div>
+                        <div class="ns-node l2">
+                            <span class="ns-node-icon">📁</span>
+                            <span class="ns-node-path">/projects/restaurant-saas</span>
+                            <span class="ns-node-desc">pricing, features, decisions</span>
+                        </div>
+                        <div class="ns-node l2">
+                            <span class="ns-node-icon">📁</span>
+                            <span class="ns-node-path">/projects/mobile-app</span>
+                            <span class="ns-node-desc">design, tech stack, goals</span>
+                        </div>
+                        <div class="ns-node l1">
+                            <span class="ns-node-icon">📁</span>
+                            <span class="ns-node-path">/self</span>
+                            <span class="ns-node-desc">agent self-knowledge</span>
+                        </div>
+                        <div class="ns-node l2">
+                            <span class="ns-node-icon">📄</span>
+                            <span class="ns-node-path">/self/capabilities</span>
+                            <span class="ns-node-desc">what I do well</span>
+                        </div>
+                        <div class="ns-node l2">
+                            <span class="ns-node-icon">📄</span>
+                            <span class="ns-node-path">/self/limits</span>
+                            <span class="ns-node-desc">what I struggle with</span>
+                        </div>
+                        <div class="ns-node l2">
+                            <span class="ns-node-icon">📄</span>
+                            <span class="ns-node-path">/self/preferences</span>
+                            <span class="ns-node-desc">how I work best</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="ns-cards">
+                    <div class="ns-feature-card">
+                        <div class="ns-feature-icon">🔍</div>
+                        <div class="ns-feature-title">Recursive reads</div>
+                        <div class="ns-feature-desc">Recall from <code>/projects</code> and get everything across all sub-projects automatically.</div>
+                    </div>
+                    <div class="ns-feature-card">
+                        <div class="ns-feature-icon">✏️</div>
+                        <div class="ns-feature-title">Precise writes</div>
+                        <div class="ns-feature-desc">Remember always targets one exact namespace — no accidental cross-contamination.</div>
+                    </div>
+                    <div class="ns-feature-card">
+                        <div class="ns-feature-icon">🔒</div>
+                        <div class="ns-feature-title">Clean separation</div>
+                        <div class="ns-feature-desc">User memory never mixes with project memory. Agent self-knowledge stays in <code>/self</code>.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ANIMATION -->
+
+<section id="howitworks">
+    <div class="container">
+        <div class="pipeline-header reveal">
+            <div class="section-tag" style="justify-content:center">See It In Action</div>
+            <h2 class="section-headline">Watch Stash <em>remember.</em></h2>
+            <p class="section-sub">A real conversation loop — two sessions, one agent, zero repetition. Watch what happens between them.</p>
+        </div>
+
+        <div class="demo-terminal reveal">
+            <div class="demo-bar">
+                <div class="terminal-dot r"></div>
+                <div class="terminal-dot y"></div>
+                <div class="terminal-dot g"></div>
+                <span class="terminal-title">agent session</span>
+                <div class="demo-controls">
+                    <button class="demo-btn" id="demo-restart">↺ Replay</button>
+                </div>
+            </div>
+            <div class="demo-body" id="demo-body"></div>
+        </div>
+    </div>
+</section>
+
 <!-- RAG -->
+
 <section id="rag">
     <div class="container">
         <div class="section-tag reveal">Stash vs RAG</div>
@@ -2108,6 +2396,147 @@
         requestAnimationFrame(drawNeural);
     }
     drawNeural();
+
+    // Demo animation — typewriter effect
+    const demoLines = [
+        { type: 'system', tag: '——', text: 'SESSION 1  ·  Monday morning' },
+        { type: 'user',   tag: 'you',   text: "I'm building a B2B SaaS for restaurants. Help me plan the pricing model." },
+        { type: 'stash',  tag: 'stash', text: '⟳ recall("context") → nothing found, fresh start' },
+        { type: 'agent',  tag: 'agent', text: "Sure! For restaurant B2B SaaS, I'd suggest three tiers: Starter, Growth, and Enterprise." },
+        { type: 'user',   tag: 'you',   text: "Let's avoid Stripe for now, too complex. We'll use a local payment provider." },
+        { type: 'stash',  tag: 'stash', text: '✓ remember("avoid Stripe, use local payment provider")' },
+        { type: 'stash',  tag: 'stash', text: '✓ remember("building B2B SaaS for restaurants, planning pricing")' },
+        { type: 'agent',  tag: 'agent', text: "Got it. Keeping suggestions away from Stripe. Shall we define the tier limits?" },
+        { type: 'user',   tag: 'you',   text: "Yes — Starter: 3 locations, Growth: 20, Enterprise: unlimited." },
+        { type: 'stash',  tag: 'stash', text: '✓ remember("Starter: 3 locations, Growth: 20, Enterprise: unlimited")' },
+        { type: 'stash',  tag: 'stash', text: '⟳ consolidate() → synthesizing episodes into facts...' },
+        { type: 'gap',    tag: '',      text: '' },
+        { type: 'divider',tag: '——',    text: 'SESSION ENDS  ·  Three days later' },
+        { type: 'gap',    tag: '',      text: '' },
+        { type: 'system', tag: '——',    text: 'SESSION 2  ·  Thursday afternoon' },
+        { type: 'user',   tag: 'you',   text: "Hey, let's continue working on my project." },
+        { type: 'stash',  tag: 'stash', text: '⟳ recall("current project context") → 3 facts found' },
+        { type: 'stash',  tag: 'stash', text: '  → "B2B SaaS for restaurants, pricing model"' },
+        { type: 'stash',  tag: 'stash', text: '  → "Avoid Stripe, use local payment provider"' },
+        { type: 'stash',  tag: 'stash', text: '  → "Starter: 3 locations, Growth: 20, Enterprise: unlimited"' },
+        { type: 'agent',  tag: 'agent', text: "Welcome back! Last time we defined your pricing tiers for the restaurant SaaS." },
+        { type: 'agent',  tag: 'agent', text: "Starter (3 locations), Growth (20), Enterprise (unlimited) — no Stripe, local payment provider." },
+        { type: 'agent',  tag: 'agent', text: "Ready to work on the onboarding flow next?" },
+        { type: 'user',   tag: 'you',   text: "Exactly. Let's go." },
+        { type: 'system', tag: '——',    text: 'Zero repetition. Full context. Stash remembered everything.' },
+    ];
+
+    // typing speed per type (ms per char)
+    const charSpeed = {
+        user: 38, agent: 22, stash: 12, system: 10, divider: 10
+    };
+    // pause after each line finishes
+    const linePause = {
+        user: 420, agent: 320, stash: 80, system: 300, divider: 500, gap: 200
+    };
+
+    let allTimers = [];
+
+    function clearAllTimers() {
+        allTimers.forEach(t => clearTimeout(t));
+        allTimers = [];
+    }
+
+    function later(fn, ms) {
+        const t = setTimeout(fn, ms);
+        allTimers.push(t);
+        return t;
+    }
+
+    function typeText(el, text, speed, done) {
+        let i = 0;
+        // add blinking cursor
+        const cursor = document.createElement('span');
+        cursor.className = 'demo-cursor';
+        el.appendChild(cursor);
+
+        function nextChar() {
+            if (i < text.length) {
+                cursor.before(document.createTextNode(text[i]));
+                i++;
+                later(nextChar, speed + (Math.random() * speed * 0.5));
+            } else {
+                cursor.remove();
+                if (done) done();
+            }
+        }
+        later(nextChar, speed);
+    }
+
+    function runDemo() {
+        clearAllTimers();
+        const body = document.getElementById('demo-body');
+        body.innerHTML = '';
+        let cursor = null;
+
+        function processLine(index, startDelay) {
+            if (index >= demoLines.length) return;
+            const line = demoLines[index];
+
+            later(() => {
+                // gap line
+                if (line.type === 'gap') {
+                    const spacer = document.createElement('div');
+                    spacer.style.height = '10px';
+                    body.appendChild(spacer);
+                    processLine(index + 1, 0);
+                    return;
+                }
+
+                const div = document.createElement('div');
+                div.className = `demo-line ${line.type} visible`;
+
+                const tagSpan = document.createElement('span');
+                tagSpan.className = 'dl-tag';
+                tagSpan.textContent = line.tag;
+
+                const textSpan = document.createElement('span');
+                textSpan.className = 'dl-text';
+
+                div.appendChild(tagSpan);
+                div.appendChild(textSpan);
+                body.appendChild(div);
+                body.scrollTop = body.scrollHeight;
+
+                const speed = charSpeed[line.type] || 20;
+                const pause = linePause[line.type] || 200;
+
+                typeText(textSpan, line.text, speed, () => {
+                    body.scrollTop = body.scrollHeight;
+                    // add blinking cursor on last line
+                    if (index === demoLines.length - 1) {
+                        const finalCursor = document.createElement('span');
+                        finalCursor.className = 'demo-cursor';
+                        textSpan.appendChild(finalCursor);
+                    }
+                    processLine(index + 1, pause);
+                });
+
+            }, startDelay);
+        }
+
+        processLine(0, 300);
+    }
+
+    // autoplay when scrolled into view
+    const demoSection = document.getElementById('howitworks');
+    const demoObserver = new IntersectionObserver(entries => {
+        entries.forEach(e => {
+            if (e.isIntersecting) { runDemo(); demoObserver.disconnect(); }
+        });
+    }, { threshold: 0.2 });
+    demoObserver.observe(demoSection);
+
+    document.getElementById('demo-restart').addEventListener('click', () => {
+        clearAllTimers();
+        runDemo();
+    });
+
 </script>
 </body>
 </html>
