@@ -441,20 +441,28 @@ func main() {
 			Name:  "mcp",
 				Usage: "MCP server for agent integration",
 				Commands: []*cli.Command{
-					{
-						Name:   "serve",
-						Usage:  "Start MCP server over SSE",
-						Action: mcpServeCmd,
-						Flags: []cli.Flag{
-							&cli.StringFlag{Name: "host", Value: "0.0.0.0"},
-							&cli.StringFlag{Name: "port", Value: "8080"},
-						},
+				{
+					Name:   "serve",
+					Usage:  "Start MCP server over SSE",
+					Action: mcpServeCmd,
+					Flags: []cli.Flag{
+						&cli.StringFlag{Name: "host", Value: "0.0.0.0"},
+						&cli.StringFlag{Name: "port", Value: "8080"},
+						&cli.BoolFlag{Name: "with-consolidation", Usage: "Run consolidation in background alongside MCP server"},
+						&cli.DurationFlag{Name: "consolidate-interval", Value: 5 * time.Minute, Usage: "Consolidation interval"},
+						&cli.StringSliceFlag{Name: "consolidate-namespaces", Usage: "Namespaces to consolidate (default: all)"},
 					},
-					{
-						Name:   "execute",
-						Usage:  "Start MCP server over stdio",
-						Action: mcpExecuteCmd,
+				},
+				{
+					Name:   "execute",
+					Usage:  "Start MCP server over stdio",
+					Action: mcpExecuteCmd,
+					Flags: []cli.Flag{
+						&cli.BoolFlag{Name: "with-consolidation", Usage: "Run consolidation in background alongside MCP server"},
+						&cli.DurationFlag{Name: "consolidate-interval", Value: 5 * time.Minute, Usage: "Consolidation interval"},
+						&cli.StringSliceFlag{Name: "consolidate-namespaces", Usage: "Namespaces to consolidate (default: all)"},
 					},
+				},
 				},
 			},
 		},

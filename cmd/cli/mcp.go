@@ -5,10 +5,12 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"text/template"
 	"time"
@@ -42,7 +44,7 @@ func render(name string) string {
 }
 
 func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
-	mcpServer := server.NewMCPServer("stash", "2.0.0",
+	mcpServer := server.NewMCPServer("stash", "0.2.0",
 		server.WithToolCapabilities(true),
 		server.WithDescription(render("server_description")),
 	)
@@ -716,6 +718,16 @@ func mcpServeCmd(ctx context.Context, cmd *cli.Command) error {
 	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
+	var wg sync.WaitGroup
+
+	if cmd.Bool("with-consolidation") {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			runConsolidationTicker(ctx, bc, cmd)
+		}()
+	}
+
 	fmt.Printf("Starting MCP SSE server on %s\n", addr)
 
 	errCh := make(chan error, 1)
@@ -726,8 +738,11 @@ func mcpServeCmd(ctx context.Context, cmd *cli.Command) error {
 	select {
 	case <-ctx.Done():
 		fmt.Println("\nMCP SSE server shutting down")
+		wg.Wait()
 		return nil
 	case err := <-errCh:
+		cancel()
+		wg.Wait()
 		return err
 	}
 }
@@ -735,5 +750,57 @@ func mcpServeCmd(ctx context.Context, cmd *cli.Command) error {
 func mcpExecuteCmd(ctx context.Context, cmd *cli.Command) error {
 	bc := getBootstrap(cmd)
 	mcpServer := newMCPServer(bc)
-	return server.ServeStdio(mcpServer)
+
+	var wg sync.WaitGroup
+
+	if cmd.Bool("with-consolidation") {
+		ctx2, cancel := context.WithCancel(ctx)
+		defer cancel()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			runConsolidationTicker(ctx2, bc, cmd)
+		}()
+	}
+
+	err := server.ServeStdio(mcpServer)
+	wg.Wait()
+	return err
+}
+
+func runConsolidationTicker(ctx context.Context, bc *bootstrap.Context, cmd *cli.Command) {
+	interval := cmd.Duration("consolidate-interval")
+	namespaces := cmd.StringSlice("consolidate-namespaces")
+
+	if len(namespaces) == 0 {
+		namespaces = []string{"/"}
+	}
+
+	log.Printf("Starting background consolidation with interval %s", interval)
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			ids, err := bc.Brain.ResolveNamespaceIDs(ctx, namespaces)
+			if err != nil {
+				log.Printf("Consolidation: failed to resolve namespaces: %v", err)
+				continue
+			}
+			for _, id := range ids {
+				result, err := bc.Brain.ConsolidateByID(ctx, id)
+				if err != nil {
+					log.Printf("Consolidation failed for namespace ID %d: %v", id, err)
+					continue
+				}
+				log.Printf("Consolidation completed for %s: facts=%d relationships=%d goals_annotated=%d failure_repeats=%d hypotheses_updated=%d",
+					result.Namespace, result.FactsCreated, result.RelationshipsFound, result.GoalsAnnotated, result.FailureRepeatsDetected, result.HypothesesUpdated)
+			}
+		case <-ctx.Done():
+			log.Printf("Background consolidation shutting down")
+			return
+		}
+	}
 }
