@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -134,22 +135,28 @@ func Open(ctx context.Context, dsn string, expectedModel string, vectorDim int) 
 // validateDimensionLock ensures the vector dimension stored in the database matches the config.
 // This is the actual storage constraint; the specific embedding model can vary as long as dimensions match.
 func validateDimensionLock(ctx context.Context, pool *pgxpool.Pool, expectedDim int) error {
-	var storedDim int
+	var storedDimStr string
 	err := pool.QueryRow(ctx,
 		"SELECT value FROM settings WHERE key = 'vector_dimension'",
-	).Scan(&storedDim)
+	).Scan(&storedDimStr)
 
 	if err != nil {
-		// No row yet — store the expected dimension.
+		// No row yet — store the expected dimension as string.
 		_, err := pool.Exec(ctx,
 			"INSERT INTO settings (key, value) VALUES ('vector_dimension', $1) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()",
-			expectedDim,
+			fmt.Sprintf("%d", expectedDim),
 		)
 		return err
 	}
 
-	if storedDim != 0 && storedDim != expectedDim {
-		return fmt.Errorf("vector dimension mismatch: database has %d, config expects %d. You can switch between different embedding models as long as they output the same dimension. Change STASH_VECTOR_DIM to match the database, or delete the database and restart", storedDim, expectedDim)
+	if storedDimStr != "" {
+		storedDim, err := strconv.Atoi(storedDimStr)
+		if err != nil {
+			return fmt.Errorf("invalid stored dimension value: %w", err)
+		}
+		if storedDim != expectedDim {
+			return fmt.Errorf("vector dimension mismatch: database has %d, config expects %d. You can switch between different embedding models as long as they output the same dimension. Change STASH_VECTOR_DIM to match the database, or delete the database and restart", storedDim, expectedDim)
+		}
 	}
 
 	return nil
