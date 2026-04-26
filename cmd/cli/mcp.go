@@ -165,10 +165,27 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 				continue
 			}
 			summaries = append(summaries, map[string]any{
-				"namespace":          result.Namespace,
-				"facts_created":      result.FactsCreated,
-				"relationships_found": result.RelationshipsFound,
-				"patterns_found":     result.PatternsFound,
+				"namespace":                    result.Namespace,
+				"episodes_read":                result.EpisodesRead,
+				"facts_created":                result.FactsCreated,
+				"facts_deduplicated":           result.FactsDeduplicated,
+				"relationships_found":          result.RelationshipsFound,
+				"causal_links_found":           result.CausalLinksFound,
+				"patterns_found":               result.PatternsFound,
+				"contradictions_found":         result.ContradictionsFound,
+				"contradictions_auto_resolved": result.ContradictionsAutoResolved,
+				"goals_annotated":              result.GoalsAnnotated,
+				"goals_suggested_complete":     result.GoalsSuggestedComplete,
+				"failure_repeats_detected":     result.FailureRepeatsDetected,
+				"failure_patterns_found":       result.FailurePatternsFound,
+				"hypotheses_auto_confirmed":    result.HypothesesAutoConfirmed,
+				"hypotheses_auto_rejected":     result.HypothesesAutoRejected,
+				"hypotheses_updated":           result.HypothesesUpdated,
+				"facts_decayed":                result.FactsDecayed,
+				"facts_expired":                result.FactsExpired,
+				"llm_calls":                    result.LLMCalls,
+				"duration":                     result.Duration.String(),
+				"errors":                       result.Errors,
 			})
 		}
 		b, _ := json.Marshal(summaries)
