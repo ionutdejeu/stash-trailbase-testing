@@ -117,7 +117,7 @@ func (o *OpenAI) ReasonStructured(ctx context.Context, texts []string) (*Structu
 	}
 
 	eventsList := strings.Join(texts, "\n- ")
-	prompt := fmt.Sprintf(`Given these events, extract a single structured fact.
+	prompt := fmt.Sprintf(`Given these events, synthesize a single structured fact.
 
 Events:
 - %s
@@ -126,10 +126,17 @@ Output ONLY this exact JSON structure:
 {"entity": "string or null", "property": "string or null", "value": "string or null", "summary": "string or null"}
 
 Rules:
-- All values MUST come ONLY from the Events listed above.
-- Do not add details not present in the Events.
+- The summary MUST synthesize and distill the Events into a fresh, generalized statement.
+- Do NOT echo, quote, or closely paraphrase any single Event. Rewrite in your own words.
+- Remove first-person markers ("I", "my", "we") — state facts about subjects, not the narrator.
+- All values MUST come ONLY from the Events. Do not add outside details.
 - If any field is not explicitly stated in the Events, use null.
-- The summary must be a factual statement derived strictly from the Events.`, eventsList)
+
+BAD example (verbatim copy — DO NOT do this):
+{"entity": "I", "property": "currently_testing", "value": "the Stash memory system", "summary": "I am currently testing the Stash memory system."}
+
+GOOD example (synthesized):
+{"entity": "Stash", "property": "status", "value": "being tested", "summary": "Stash memory system is currently being tested."}`, eventsList)
 
 	msgs := []openai.ChatCompletionMessageParamUnion{
 		openai.SystemMessage(systemPrompt),
@@ -1038,6 +1045,33 @@ func validateFactGrounding(sf *StructuredFact, texts []string) error {
 		total := len(words)
 		if total > 0 && float32(ungrounded)/float32(total) > 0.3 {
 			return fmt.Errorf("field contains ungrounded words: %q", field)
+		}
+	}
+
+	// Anti-verbatim check: summary must not be a near-verbatim copy of any single source text
+	summaryLower := strings.ToLower(sf.Summary)
+	summaryWords := tokenize(summaryLower)
+	if len(summaryWords) == 0 {
+		return nil
+	}
+
+	for _, text := range texts {
+		textLower := strings.ToLower(text)
+		if strings.Contains(textLower, summaryLower) {
+			return fmt.Errorf("summary is a verbatim copy of source text")
+		}
+		textWords := tokenize(textLower)
+		if len(textWords) == 0 {
+			continue
+		}
+		matches := 0
+		for w := range summaryWords {
+			if textWords[w] {
+				matches++
+			}
+		}
+		if float32(matches)/float32(len(summaryWords)) > 0.80 {
+			return fmt.Errorf("summary is too close to a verbatim copy of source text")
 		}
 	}
 

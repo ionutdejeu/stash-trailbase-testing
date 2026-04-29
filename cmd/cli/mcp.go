@@ -44,7 +44,7 @@ func render(name string) string {
 }
 
 func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
-	mcpServer := server.NewMCPServer("stash", "0.2.0",
+	mcpServer := server.NewMCPServer("stash", "0.2.7",
 		server.WithToolCapabilities(true),
 		server.WithDescription(render("server_description")),
 	)

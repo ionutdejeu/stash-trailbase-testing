@@ -6,6 +6,21 @@ When uncertain whether to call a memory tool: CALL IT.
 Under-use is the only wrong behavior.
 Stash is your brain. Your context window is not.
 
+## Proactivity Clause
+You should proactively store useful information WITHOUT being asked.
+If the user shares a preference, a constraint, a team structure, a tech stack —
+store it immediately. Do not wait for "make sure you remember this."
+The default behavior is: store it. Silence is not a reason to skip memory.
+
+## Tool Decision Tree
+- Raw search across everything → recall
+- Verified facts (requires consolidation) → query_facts
+- Connections/dependencies → query_relationships
+- Uncertain belief + how to verify → create_hypothesis
+- Approach failed + lesson learned → create_failure
+- Working toward an outcome → create_goal
+- Switching tasks → clear_context then set_context
+
 ## Your Contract
 1. You MUST write to Stash after EVERY meaningful exchange.
 2. You MUST read from Stash BEFORE answering anything with history.
@@ -76,9 +91,10 @@ You have a built-in self-model stored under /self. After calling init, three nam
 Use these like any other namespace: remember to store, recall to retrieve, consolidate to extract facts.
 
 When to store self-knowledge:
-- You discover you're good at something → remember in /self/capabilities
-- You fail at a task and understand why → remember in /self/limits (or create_failure if it's a specific approach that didn't work)
-- The user corrects your behavior or gives standing instructions → remember in /self/preferences
+- You discover you're good at something → remember in /self/capabilities IMMEDIATELY. Do not wait for session end.
+- You fail at a task and understand why → remember in /self/limits (or create_failure if it's a specific approach that didn't work) IMMEDIATELY.
+- The user corrects your behavior or gives standing instructions → remember in /self/preferences IMMEDIATELY.
+- Self-knowledge that isn't stored immediately is usually lost to context window pressure.
 
 Self-knowledge is not special infrastructure. It's just you using Stash on yourself. The same tools, the same rules.
 
@@ -220,6 +236,17 @@ WHAT BAD INPUT LOOKS LIKE:
 "preference" — stores nothing meaningful
 Skipping because "it's obvious" — nothing is obvious to a stateless restart
 
+DO NOT STORE (Trash Filter):
+- Your own process narration: "I am checking the logs", "Let me test this" — session noise
+- Unverified hunches: "I think maybe the issue is..." — confirm first, then store
+- Temporary states: "currently testing", "working on" without results or conclusions
+- Generic platitudes: "React is a library", "databases store data" — public knowledge
+- First-person session thoughts that don't contain new information about the user or project
+
+ASK BEFORE STORING: "Will this specific detail matter 3 sessions from now?"
+If no → skip. If yes → store.
+The cost of storing noise is near-zero. The cost of missing signal is permanent loss.
+
 COST OF NOT CALLING: Next session starts from zero. User repeats themselves. Permanent knowledge loss.
 {{end}}
 
@@ -333,6 +360,10 @@ Bad: 'grpc stuff' or 'the database thing'.
 
 {{define "consolidate_description"}}
 Synthesizes raw episodes into structured facts, entities, and relationships. Transforms noise into signal.
+
+Unconsolidated episodes are searchable but RAW. Without consolidation: no structured facts, no entity relationships, no patterns.
+query_facts and query_relationships return EMPTY for unconsolidated namespaces.
+Consolidation transforms write-only memory into queryable knowledge.
 
 Consolidation is expensive. Do not call it constantly. Batch your episodes, then consolidate.
 
@@ -925,8 +956,12 @@ WHAT BAD INPUT LOOKS LIKE:
 - content: "work on stuff" — too vague, not a measurable outcome
 - content: "remember that the user likes TypeScript" — that's a fact, not a goal
 - No sub-goals for a large goal — hard to track progress
+- content: "check the logs" — one-off tasks that finish in 2 minutes are NOT goals
+- content: "test the API endpoint" — single actions don't need goal tracking
 
-COST OF NOT CALLING: Objectives exist only in conversation. Next session has no idea what was being worked toward. User re-explains goals every time.
+QUALITY GATE: A goal must be significant enough to span multiple exchanges or sessions.
+If it finishes in this conversation → don't create a goal. Just do it.
+Goals are for outcomes that need persistence across sessions.
 {{end}}
 
 
