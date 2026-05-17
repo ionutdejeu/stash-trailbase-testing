@@ -133,7 +133,7 @@ Rules:
 - If any field is not explicitly stated in the Events, use null.
 - PRESERVE specifics: proper nouns, library names, version numbers, file paths, technical terms, and quantities.
 - Do NOT replace specifics with vague words like "various", "components", "functionalities", "features", "certain".
-- The entity should be the most specific subject (e.g., "pgxpool" not "the system").
+- The entity should be the most specific subject (e.g., "TrailBase" not "the system").
 
 BAD example (vague — DO NOT do this):
 {"entity": "Stash", "property": "components", "value": "various functionalities", "summary": "Stash comprises various components for different functionalities."}
@@ -142,7 +142,7 @@ BAD example (verbatim copy — DO NOT do this):
 {"entity": "I", "property": "currently_testing", "value": "the Stash memory system", "summary": "I am currently testing the Stash memory system."}
 
 GOOD example (specific and synthesized):
-{"entity": "Stash", "property": "database", "value": "PostgreSQL with pgvector", "summary": "Stash uses PostgreSQL with pgvector extension for vector storage and HNSW indexes."}`, eventsList)
+{"entity": "Stash", "property": "database", "value": "TrailBase on SQLite", "summary": "Stash stores memory in TrailBase using a SQLite-backed schema and application-side vector scoring."}`, eventsList)
 
 	msgs := []openai.ChatCompletionMessageParamUnion{
 		openai.SystemMessage(systemPrompt),
@@ -394,10 +394,10 @@ Rules:
 			}
 
 			validated = append(validated, &StructuredPattern{
-				Content:       jp.Pattern,
+				Content:        jp.Pattern,
 				CoherenceScore: coherence,
-				SourceFactIDs: validFacts,
-				SourceRelIDs:  validRels,
+				SourceFactIDs:  validFacts,
+				SourceRelIDs:   validRels,
 			})
 		}
 

@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/alash3al/stash/internal/models"
-	"github.com/jackc/pgx/v5"
 )
 
 var ErrFailureNotFound = fmt.Errorf("brain: failure not found")
@@ -25,7 +24,7 @@ func (b *Brain) CreateFailure(ctx context.Context, nsID int64, content, reason, 
 	}
 
 	var f models.Failure
-	err := b.pool.QueryRow(ctx,
+	err := b.pool.QueryRowContext(ctx,
 		`INSERT INTO failures (namespace_id, goal_id, content, reason, lesson)
 		 VALUES ($1, $2, $3, $4, $5)
 		 RETURNING `+failureColumns,
@@ -46,9 +45,10 @@ func (b *Brain) ListFailures(ctx context.Context, namespaceSlugs []string, goalI
 
 	page = page.Sanitize()
 
-	query := `SELECT ` + failureColumns + ` FROM failures WHERE namespace_id = ANY($1) AND deleted_at IS NULL`
-	args := []any{nsIDs}
-	argN := 1
+	placeholders, nsArgs := inClause(1, nsIDs)
+	query := fmt.Sprintf(`SELECT %s FROM failures WHERE namespace_id IN (%s) AND deleted_at IS NULL`, failureColumns, placeholders)
+	args := nsArgs
+	argN := len(args)
 
 	if goalID != nil {
 		argN++
@@ -64,7 +64,7 @@ func (b *Brain) ListFailures(ctx context.Context, namespaceSlugs []string, goalI
 	query += fmt.Sprintf(" OFFSET $%d", argN)
 	args = append(args, page.Offset)
 
-	rows, err := b.pool.Query(ctx, query, args...)
+	rows, err := b.pool.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list failures: %w", err)
 	}
@@ -84,11 +84,11 @@ func (b *Brain) ListFailures(ctx context.Context, namespaceSlugs []string, goalI
 // GetFailure returns a single failure by ID.
 func (b *Brain) GetFailure(ctx context.Context, id int64) (*models.Failure, error) {
 	var f models.Failure
-	err := b.pool.QueryRow(ctx,
+	err := b.pool.QueryRowContext(ctx,
 		`SELECT `+failureColumns+` FROM failures WHERE id = $1`, id,
 	).Scan(&f.ID, &f.NamespaceID, &f.GoalID, &f.Content, &f.Reason, &f.Lesson, &f.CreatedAt, &f.DeletedAt)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if isNoRows(err) {
 			return nil, ErrFailureNotFound
 		}
 		return nil, fmt.Errorf("get failure: %w", err)
@@ -98,14 +98,18 @@ func (b *Brain) GetFailure(ctx context.Context, id int64) (*models.Failure, erro
 
 // DeleteFailure soft-deletes a failure by ID.
 func (b *Brain) DeleteFailure(ctx context.Context, id int64) error {
-	tag, err := b.pool.Exec(ctx,
-		"UPDATE failures SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL",
+	tag, err := b.pool.ExecContext(ctx,
+		"UPDATE failures SET deleted_at = CURRENT_TIMESTAMP WHERE id = $1 AND deleted_at IS NULL",
 		id,
 	)
 	if err != nil {
 		return fmt.Errorf("delete failure: %w", err)
 	}
-	if tag.RowsAffected() == 0 {
+	affected, err := rowsAffected(tag)
+	if err != nil {
+		return fmt.Errorf("delete failure rows affected: %w", err)
+	}
+	if affected == 0 {
 		return ErrFailureNotFound
 	}
 	return nil

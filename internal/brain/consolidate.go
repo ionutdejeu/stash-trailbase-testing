@@ -8,7 +8,7 @@ import (
 
 	"github.com/alash3al/stash/internal/models"
 	"github.com/alash3al/stash/internal/observability"
-	"github.com/pgvector/pgvector-go"
+	"github.com/alash3al/stash/internal/vector"
 )
 
 // ConsolidationResult describes the outcome of a consolidation run.
@@ -56,7 +56,7 @@ func (b *Brain) ConsolidateByID(ctx context.Context, nsID int64) (ConsolidationR
 	start := time.Now()
 
 	var namespaceSlug string
-	_ = b.pool.QueryRow(ctx, "SELECT slug FROM namespaces WHERE id = $1", nsID).Scan(&namespaceSlug)
+	_ = b.pool.QueryRowContext(ctx, "SELECT slug FROM namespaces WHERE id = $1", nsID).Scan(&namespaceSlug)
 
 	result := ConsolidationResult{Namespace: namespaceSlug}
 
@@ -176,7 +176,7 @@ func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *
 		return
 	}
 
-	rows, err := b.pool.Query(ctx, sql, args...)
+	rows, err := b.pool.QueryContext(ctx, sql, args...)
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("fetch episodes: %v", err))
 		return
@@ -265,10 +265,10 @@ func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *
 		now := time.Now().UTC()
 
 		var factID int64
-		err = b.pool.QueryRow(ctx,
+		err = b.pool.QueryRowContext(ctx,
 			`INSERT INTO facts (namespace_id, content, embedding, embedding_model, confidence, entity, property, value, valid_from)
 			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
-			nsID, sf.Summary, pgvector.NewVector(vec), b.embedder.Model(), confidence,
+			nsID, sf.Summary, vector.New(vec), b.embedder.Model(), confidence,
 			strPtrOrNull(sf.Entity), strPtrOrNull(sf.Property), strPtrOrNull(sf.Value), now,
 		).Scan(&factID)
 		if err != nil {
@@ -279,7 +279,7 @@ func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *
 
 		// Insert fact_sources
 		for _, eid := range episodeIDs {
-			_, _ = b.pool.Exec(ctx,
+			_, _ = b.pool.ExecContext(ctx,
 				"INSERT INTO fact_sources (fact_id, episode_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
 				factID, eid,
 			)
@@ -355,18 +355,28 @@ func (b *Brain) clusterEpisodes(episodes []models.Episode) [][]models.Episode {
 }
 
 func (b *Brain) factExistsByVector(ctx context.Context, nsID int64, vec []float32) (bool, error) {
-	var id int64
 	var score float32
-	err := b.pool.QueryRow(ctx,
-		`SELECT id, 1 - (embedding <=> $2) AS score FROM facts
-		 WHERE namespace_id = $1 AND deleted_at IS NULL AND embedding IS NOT NULL
-		 ORDER BY embedding <=> $2 LIMIT 1`,
-		nsID, pgvector.NewVector(vec),
-	).Scan(&id, &score)
+	rows, err := b.pool.QueryContext(ctx,
+		`SELECT embedding FROM facts
+		 WHERE namespace_id = $1 AND deleted_at IS NULL AND embedding IS NOT NULL`,
+		nsID,
+	)
 	if err != nil {
-		return false, nil
+		return false, err
 	}
-	return score >= float32(b.config.DedupThreshold), nil
+	defer rows.Close()
+
+	for rows.Next() {
+		var embedding vector.Vector
+		if err := rows.Scan(&embedding); err != nil {
+			return false, err
+		}
+		score = vector.CosineSimilarity(embedding.Slice(), vec)
+		if score >= float32(b.config.DedupThreshold) {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
 }
 
 func calculateConfidence(observationCount int, hasStructuredFields bool) float32 {
@@ -415,7 +425,7 @@ func (b *Brain) consolidateFactsToRelationships(ctx context.Context, nsID int64,
 		return
 	}
 
-	rows, err := b.pool.Query(ctx, sql, args...)
+	rows, err := b.pool.QueryContext(ctx, sql, args...)
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("fetch facts: %v", err))
 		return
@@ -467,7 +477,7 @@ func (b *Brain) consolidateFactsToRelationships(ctx context.Context, nsID int64,
 				continue
 			}
 
-			_, err := b.pool.Exec(ctx,
+			_, err := b.pool.ExecContext(ctx,
 				`INSERT INTO relationships (namespace_id, from_entity, relation_type, to_entity, confidence, source_fact_id)
 				 VALUES ($1, $2, $3, $4, $5, $6)`,
 				nsID, rel.FromEntity, rel.RelationType, rel.ToEntity, rel.Confidence, fact.ID,
@@ -489,7 +499,7 @@ func (b *Brain) consolidateFactsToRelationships(ctx context.Context, nsID int64,
 
 func (b *Brain) relationshipExists(ctx context.Context, nsID int64, from, relType, to string, sourceFactID int64) (bool, error) {
 	var id int64
-	err := b.pool.QueryRow(ctx,
+	err := b.pool.QueryRowContext(ctx,
 		`SELECT id FROM relationships
 		 WHERE namespace_id = $1 AND from_entity = $2 AND relation_type = $3 AND to_entity = $4
 		 AND source_fact_id = $5 AND deleted_at IS NULL LIMIT 1`,
@@ -510,7 +520,7 @@ func (b *Brain) consolidateFactsToCausalLinks(ctx context.Context, nsID int64, c
 		return
 	}
 
-	rows, err := b.pool.Query(ctx, sql, args...)
+	rows, err := b.pool.QueryContext(ctx, sql, args...)
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("fetch facts for causal: %v", err))
 		return
@@ -552,7 +562,7 @@ func (b *Brain) consolidateToPatterns(ctx context.Context, nsID int64, cp *model
 		return
 	}
 
-	factRows, err := b.pool.Query(ctx, factSQL, factArgs...)
+	factRows, err := b.pool.QueryContext(ctx, factSQL, factArgs...)
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("fetch facts for patterns: %v", err))
 		return
@@ -584,7 +594,7 @@ func (b *Brain) consolidateToPatterns(ctx context.Context, nsID int64, cp *model
 		return
 	}
 
-	relRows, err := b.pool.Query(ctx, relSQL, relArgs...)
+	relRows, err := b.pool.QueryContext(ctx, relSQL, relArgs...)
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("fetch rels for patterns: %v", err))
 		return
@@ -659,10 +669,10 @@ func (b *Brain) consolidateToPatterns(ctx context.Context, nsID int64, cp *model
 			}
 		}
 
-		_, err := b.pool.Exec(ctx,
+		_, err := b.pool.ExecContext(ctx,
 			`INSERT INTO patterns (namespace_id, content, confidence, source_fact_ids, source_rel_ids, coherence_score)
 			 VALUES ($1, $2, $3, $4, $5, $6)`,
-			nsID, p.Content, confidence, sourceFactIDs, sourceRelIDs, p.CoherenceScore,
+			nsID, p.Content, confidence, vector.Int64Slice(sourceFactIDs), vector.Int64Slice(sourceRelIDs), p.CoherenceScore,
 		)
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("insert pattern: %v", err))

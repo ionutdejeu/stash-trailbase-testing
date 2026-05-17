@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/alash3al/stash/internal/models"
-	"github.com/jackc/pgx/v5"
 )
 
 // CreateNamespace creates a new namespace with the given slug, name, and description.
@@ -19,8 +18,8 @@ func (b *Brain) CreateNamespace(ctx context.Context, slug, name, description str
 	segments := splitPath(slug)
 	if len(segments) == 0 {
 		var id int64
-		err := b.pool.QueryRow(ctx,
-			"INSERT INTO namespaces (slug, name) VALUES ('/', '/') ON CONFLICT (slug) DO UPDATE SET updated_at = now() RETURNING id",
+		err := b.pool.QueryRowContext(ctx,
+			"INSERT INTO namespaces (slug, name) VALUES ('/', '/') ON CONFLICT (slug) DO UPDATE SET updated_at = CURRENT_TIMESTAMP RETURNING id",
 		).Scan(&id)
 		if err != nil {
 			return 0, fmt.Errorf("create root namespace: %w", err)
@@ -33,16 +32,16 @@ func (b *Brain) CreateNamespace(ctx context.Context, slug, name, description str
 		currentPath += "/" + seg
 		if i < len(segments)-1 {
 			var id int64
-			_ = b.pool.QueryRow(ctx,
-				"INSERT INTO namespaces (slug, name) VALUES ($1, $1) ON CONFLICT (slug) DO UPDATE SET updated_at = now() RETURNING id",
+			_ = b.pool.QueryRowContext(ctx,
+				"INSERT INTO namespaces (slug, name) VALUES ($1, $1) ON CONFLICT (slug) DO UPDATE SET updated_at = CURRENT_TIMESTAMP RETURNING id",
 				currentPath,
 			).Scan(&id)
 		}
 	}
 
 	var id int64
-	err := b.pool.QueryRow(ctx,
-		"INSERT INTO namespaces (slug, name, description) VALUES ($1, $2, $3) ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description, updated_at = now() RETURNING id",
+	err := b.pool.QueryRowContext(ctx,
+		"INSERT INTO namespaces (slug, name, description) VALUES ($1, $2, $3) ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description, updated_at = CURRENT_TIMESTAMP RETURNING id",
 		slug, name, description,
 	).Scan(&id)
 	if err != nil {
@@ -54,12 +53,12 @@ func (b *Brain) CreateNamespace(ctx context.Context, slug, name, description str
 // GetNamespace returns a namespace by slug.
 func (b *Brain) GetNamespace(ctx context.Context, slug string) (*models.Namespace, error) {
 	var ns models.Namespace
-	err := b.pool.QueryRow(ctx,
+	err := b.pool.QueryRowContext(ctx,
 		"SELECT id, slug, name, description, created_at, updated_at FROM namespaces WHERE slug = $1",
 		slug,
 	).Scan(&ns.ID, &ns.Slug, &ns.Name, &ns.Description, &ns.CreatedAt, &ns.UpdatedAt)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if isNoRows(err) {
 			return nil, ErrNamespaceNotFound
 		}
 		return nil, fmt.Errorf("get namespace: %w", err)
@@ -74,7 +73,7 @@ func (b *Brain) ListNamespaces(ctx context.Context, slugs []string, page Paginat
 	page = page.Sanitize()
 
 	if len(slugs) == 0 {
-		rows, err := b.pool.Query(ctx,
+		rows, err := b.pool.QueryContext(ctx,
 			"SELECT id, slug, name, description, created_at, updated_at FROM namespaces ORDER BY slug LIMIT $1 OFFSET $2",
 			page.Limit, page.Offset,
 		)
@@ -99,9 +98,11 @@ func (b *Brain) ListNamespaces(ctx context.Context, slugs []string, page Paginat
 		return nil, err
 	}
 
-	rows, err := b.pool.Query(ctx,
-		"SELECT id, slug, name, description, created_at, updated_at FROM namespaces WHERE id = ANY($1) ORDER BY slug LIMIT $2 OFFSET $3",
-		ids, page.Limit, page.Offset,
+	placeholders, args := inClause(1, ids)
+	args = append(args, page.Limit, page.Offset)
+	rows, err := b.pool.QueryContext(ctx,
+		fmt.Sprintf("SELECT id, slug, name, description, created_at, updated_at FROM namespaces WHERE id IN (%s) ORDER BY slug LIMIT $%d OFFSET $%d", placeholders, len(ids)+1, len(ids)+2),
+		args...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list namespaces: %w", err)
@@ -122,7 +123,7 @@ func (b *Brain) ListNamespaces(ctx context.Context, slugs []string, page Paginat
 // GetOrCreateConsolidationProgress returns progress for a namespace, creating a row if needed.
 func (b *Brain) GetOrCreateConsolidationProgress(ctx context.Context, namespaceID int64) (*models.ConsolidationProgress, error) {
 	var cp models.ConsolidationProgress
-	err := b.pool.QueryRow(ctx,
+	err := b.pool.QueryRowContext(ctx,
 		`INSERT INTO consolidation_progress (namespace_id) VALUES ($1)
 		 ON CONFLICT (namespace_id) DO UPDATE SET updated_at = consolidation_progress.updated_at
 		 RETURNING namespace_id, last_episode_id, last_fact_id, last_relationship_id, last_pattern_fact_id, last_pattern_rel_id, last_goal_progress_fact_id, last_failure_id, last_failure_episode_id, last_hypothesis_fact_id, last_decay_run, last_run, updated_at`,
@@ -137,7 +138,7 @@ func (b *Brain) GetOrCreateConsolidationProgress(ctx context.Context, namespaceI
 // SaveConsolidationProgress updates the checkpoint for a namespace.
 func (b *Brain) SaveConsolidationProgress(ctx context.Context, cp models.ConsolidationProgress) error {
 	now := time.Now().UTC()
-	_, err := b.pool.Exec(ctx,
+	_, err := b.pool.ExecContext(ctx,
 		`UPDATE consolidation_progress SET
 			last_episode_id = $2, last_fact_id = $3, last_relationship_id = $4,
 			last_pattern_fact_id = $5, last_pattern_rel_id = $6,

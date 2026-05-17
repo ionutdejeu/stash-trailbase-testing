@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/alash3al/stash/internal/models"
-	"github.com/jackc/pgx/v5"
 )
 
 // QueryFacts returns facts across namespaces matching the given slug paths, within an optional time range.
@@ -19,11 +18,12 @@ func (b *Brain) QueryFacts(ctx context.Context, namespaceSlugs []string, since, 
 
 	page = page.Sanitize()
 
-	query := `SELECT id, namespace_id, content, embedding, embedding_model, confidence,
+	placeholders, nsArgs := inClause(1, nsIDs)
+	query := fmt.Sprintf(`SELECT id, namespace_id, content, embedding, embedding_model, confidence,
 	          entity, property, value, valid_from, valid_until, created_at, updated_at, deleted_at
-	          FROM facts WHERE namespace_id = ANY($1) AND deleted_at IS NULL`
-	args := []any{nsIDs}
-	argN := 1
+	          FROM facts WHERE namespace_id IN (%s) AND deleted_at IS NULL`, placeholders)
+	args := nsArgs
+	argN := len(args)
 
 	if since != nil {
 		argN++
@@ -44,7 +44,7 @@ func (b *Brain) QueryFacts(ctx context.Context, namespaceSlugs []string, since, 
 	query += fmt.Sprintf(" OFFSET $%d", argN)
 	args = append(args, page.Offset)
 
-	rows, err := b.pool.Query(ctx, query, args...)
+	rows, err := b.pool.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query facts: %w", err)
 	}
@@ -68,8 +68,8 @@ func (b *Brain) QueryFacts(ctx context.Context, namespaceSlugs []string, since, 
 
 // UpdateFactConfidence updates the confidence score of a fact.
 func (b *Brain) UpdateFactConfidence(ctx context.Context, factID int64, confidence float32) error {
-	_, err := b.pool.Exec(ctx,
-		"UPDATE facts SET confidence = $2, updated_at = now() WHERE id = $1",
+	_, err := b.pool.ExecContext(ctx,
+		"UPDATE facts SET confidence = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
 		factID, confidence,
 	)
 	if err != nil {
@@ -80,11 +80,15 @@ func (b *Brain) UpdateFactConfidence(ctx context.Context, factID int64, confiden
 
 // PurgeFact hard-deletes a fact by ID.
 func (b *Brain) PurgeFact(ctx context.Context, factID int64) error {
-	tag, err := b.pool.Exec(ctx, "DELETE FROM facts WHERE id = $1", factID)
+	tag, err := b.pool.ExecContext(ctx, "DELETE FROM facts WHERE id = $1", factID)
 	if err != nil {
 		return fmt.Errorf("purge fact: %w", err)
 	}
-	if tag.RowsAffected() == 0 {
+	affected, err := rowsAffected(tag)
+	if err != nil {
+		return fmt.Errorf("purge fact rows affected: %w", err)
+	}
+	if affected == 0 {
 		return ErrFactNotFound
 	}
 	return nil
@@ -93,7 +97,7 @@ func (b *Brain) PurgeFact(ctx context.Context, factID int64) error {
 // GetFact returns a single fact by ID.
 func (b *Brain) GetFact(ctx context.Context, factID int64) (*models.Fact, error) {
 	var f models.Fact
-	err := b.pool.QueryRow(ctx,
+	err := b.pool.QueryRowContext(ctx,
 		`SELECT id, namespace_id, content, embedding, embedding_model, confidence,
 		 entity, property, value, valid_from, valid_until, created_at, updated_at, deleted_at
 		 FROM facts WHERE id = $1`,
@@ -105,7 +109,7 @@ func (b *Brain) GetFact(ctx context.Context, factID int64) (*models.Fact, error)
 		&f.CreatedAt, &f.UpdatedAt, &f.DeletedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if isNoRows(err) {
 			return nil, ErrFactNotFound
 		}
 		return nil, fmt.Errorf("get fact: %w", err)
@@ -123,10 +127,12 @@ func (b *Brain) QueryRelationships(ctx context.Context, namespaceSlugs []string,
 
 	page = page.Sanitize()
 
-	rows, err := b.pool.Query(ctx,
-		`SELECT id, namespace_id, from_entity, relation_type, to_entity, confidence, source_fact_id, created_at, deleted_at
-		 FROM relationships WHERE namespace_id = ANY($1) AND deleted_at IS NULL ORDER BY id LIMIT $2 OFFSET $3`,
-		nsIDs, page.Limit, page.Offset,
+	placeholders, args := inClause(1, nsIDs)
+	args = append(args, page.Limit, page.Offset)
+	rows, err := b.pool.QueryContext(ctx,
+		fmt.Sprintf(`SELECT id, namespace_id, from_entity, relation_type, to_entity, confidence, source_fact_id, created_at, deleted_at
+		 FROM relationships WHERE namespace_id IN (%s) AND deleted_at IS NULL ORDER BY id LIMIT $%d OFFSET $%d`, placeholders, len(nsIDs)+1, len(nsIDs)+2),
+		args...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("query relationships: %w", err)
@@ -154,10 +160,12 @@ func (b *Brain) QueryPatterns(ctx context.Context, namespaceSlugs []string, page
 
 	page = page.Sanitize()
 
-	rows, err := b.pool.Query(ctx,
-		`SELECT id, namespace_id, content, confidence, source_fact_ids, source_rel_ids, coherence_score, created_at, updated_at, deleted_at
-		 FROM patterns WHERE namespace_id = ANY($1) AND deleted_at IS NULL ORDER BY id LIMIT $2 OFFSET $3`,
-		nsIDs, page.Limit, page.Offset,
+	placeholders, args := inClause(1, nsIDs)
+	args = append(args, page.Limit, page.Offset)
+	rows, err := b.pool.QueryContext(ctx,
+		fmt.Sprintf(`SELECT id, namespace_id, content, confidence, source_fact_ids, source_rel_ids, coherence_score, created_at, updated_at, deleted_at
+		 FROM patterns WHERE namespace_id IN (%s) AND deleted_at IS NULL ORDER BY id LIMIT $%d OFFSET $%d`, placeholders, len(nsIDs)+1, len(nsIDs)+2),
+		args...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("query patterns: %w", err)

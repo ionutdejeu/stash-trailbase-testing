@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/alash3al/stash/internal/models"
-	"github.com/pgvector/pgvector-go"
+	"github.com/alash3al/stash/internal/vector"
 )
 
 // Remember stores a new episode in the given namespace.
@@ -36,10 +36,10 @@ func (b *Brain) Remember(ctx context.Context, namespaceSlug, content string, occ
 	}
 
 	var id int64
-	err = b.pool.QueryRow(ctx,
+	err = b.pool.QueryRowContext(ctx,
 		`INSERT INTO episodes (namespace_id, content, embedding, embedding_model, occurred_at)
 		 VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-		nsID, content, pgvector.NewVector(vec), b.embedder.Model(), occurred,
+		nsID, content, vector.New(vec), b.embedder.Model(), occurred,
 	).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("insert episode: %w", err)
@@ -69,28 +69,40 @@ func (b *Brain) ForgetEpisode(ctx context.Context, namespaceSlugs []string, quer
 		return fmt.Errorf("embed: %w", err)
 	}
 
-	var id int64
-	if len(nsIDs) == 1 {
-		err = b.pool.QueryRow(ctx,
-			`SELECT id FROM episodes
-			 WHERE namespace_id = $1 AND deleted_at IS NULL AND embedding IS NOT NULL
-			 ORDER BY embedding <=> $2 LIMIT 1`,
-			nsIDs[0], pgvector.NewVector(vec),
-		).Scan(&id)
-	} else {
-		err = b.pool.QueryRow(ctx,
-			`SELECT id FROM episodes
-			 WHERE namespace_id = ANY($1) AND deleted_at IS NULL AND embedding IS NOT NULL
-			 ORDER BY embedding <=> $2 LIMIT 1`,
-			nsIDs, pgvector.NewVector(vec),
-		).Scan(&id)
-	}
+	placeholders, args := inClause(1, nsIDs)
+	rows, err := b.pool.QueryContext(ctx,
+		fmt.Sprintf(`SELECT id, embedding FROM episodes
+		 WHERE namespace_id IN (%s) AND deleted_at IS NULL AND embedding IS NOT NULL`, placeholders),
+		args...,
+	)
 	if err != nil {
+		return fmt.Errorf("query forget candidates: %w", err)
+	}
+	defer rows.Close()
+
+	var id int64
+	var bestScore float32 = -1
+	for rows.Next() {
+		var candidateID int64
+		var embedding vector.Vector
+		if err := rows.Scan(&candidateID, &embedding); err != nil {
+			return fmt.Errorf("scan forget candidate: %w", err)
+		}
+		score := vector.CosineSimilarity(embedding.Slice(), vec)
+		if score > bestScore {
+			bestScore = score
+			id = candidateID
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate forget candidates: %w", err)
+	}
+	if id == 0 {
 		return ErrEpisodeNotFound
 	}
 
-	_, err = b.pool.Exec(ctx,
-		"UPDATE episodes SET deleted_at = now() WHERE id = $1", id,
+	_, err = b.pool.ExecContext(ctx,
+		"UPDATE episodes SET deleted_at = CURRENT_TIMESTAMP WHERE id = $1", id,
 	)
 	if err != nil {
 		return fmt.Errorf("soft delete episode: %w", err)
@@ -100,11 +112,15 @@ func (b *Brain) ForgetEpisode(ctx context.Context, namespaceSlugs []string, quer
 
 // PurgeEpisode hard-deletes an episode by ID.
 func (b *Brain) PurgeEpisode(ctx context.Context, episodeID int64) error {
-	tag, err := b.pool.Exec(ctx, "DELETE FROM episodes WHERE id = $1", episodeID)
+	tag, err := b.pool.ExecContext(ctx, "DELETE FROM episodes WHERE id = $1", episodeID)
 	if err != nil {
 		return fmt.Errorf("purge episode: %w", err)
 	}
-	if tag.RowsAffected() == 0 {
+	affected, err := rowsAffected(tag)
+	if err != nil {
+		return fmt.Errorf("purge episode rows affected: %w", err)
+	}
+	if affected == 0 {
 		return ErrEpisodeNotFound
 	}
 	return nil
@@ -113,7 +129,7 @@ func (b *Brain) PurgeEpisode(ctx context.Context, episodeID int64) error {
 // GetEpisode returns a single episode by ID.
 func (b *Brain) GetEpisode(ctx context.Context, episodeID int64) (*models.Episode, error) {
 	var e models.Episode
-	err := b.pool.QueryRow(ctx,
+	err := b.pool.QueryRowContext(ctx,
 		`SELECT id, namespace_id, content, embedding, embedding_model, occurred_at, created_at, deleted_at
 		 FROM episodes WHERE id = $1`,
 		episodeID,

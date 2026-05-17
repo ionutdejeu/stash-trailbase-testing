@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/alash3al/stash/internal/models"
-	"github.com/jackc/pgx/v5"
 )
 
 // SetContext updates the working context for a namespace.
@@ -22,10 +21,10 @@ func (b *Brain) SetContext(ctx context.Context, namespaceSlug, focus string, exp
 		return err
 	}
 
-	_, err = b.pool.Exec(ctx,
+	_, err = b.pool.ExecContext(ctx,
 		`INSERT INTO contexts (namespace_id, focus, expires_at)
 		 VALUES ($1, $2, $3)
-		 ON CONFLICT (namespace_id) DO UPDATE SET focus = $2, expires_at = $3, updated_at = now()`,
+		 ON CONFLICT (namespace_id) DO UPDATE SET focus = $2, expires_at = $3, updated_at = CURRENT_TIMESTAMP`,
 		nsID, focus, expiresAt,
 	)
 	if err != nil {
@@ -45,13 +44,13 @@ func (b *Brain) GetContext(ctx context.Context, namespaceSlug string) (*models.C
 	}
 
 	var c models.Context
-	err = b.pool.QueryRow(ctx,
+	err = b.pool.QueryRowContext(ctx,
 		`SELECT namespace_id, focus, expires_at, created_at, updated_at
 		 FROM contexts WHERE namespace_id = $1`,
 		nsID,
 	).Scan(&c.NamespaceID, &c.Focus, &c.ExpiresAt, &c.CreatedAt, &c.UpdatedAt)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if isNoRows(err) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("get context: %w", err)
@@ -69,7 +68,7 @@ func (b *Brain) ClearContext(ctx context.Context, namespaceSlug string) error {
 		return err
 	}
 
-	_, err = b.pool.Exec(ctx, "DELETE FROM contexts WHERE namespace_id = $1", nsID)
+	_, err = b.pool.ExecContext(ctx, "DELETE FROM contexts WHERE namespace_id = $1", nsID)
 	if err != nil {
 		return fmt.Errorf("clear context: %w", err)
 	}

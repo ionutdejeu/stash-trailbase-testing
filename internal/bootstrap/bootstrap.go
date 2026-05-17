@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log/slog"
 	"os"
@@ -14,14 +15,13 @@ import (
 	"github.com/alash3al/stash/internal/embedder"
 	"github.com/alash3al/stash/internal/queries"
 	"github.com/alash3al/stash/internal/reasoner"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Context holds all initialized services.
 type Context struct {
 	Config *config.Config
 	Brain  *brain.Brain
-	Pool   *pgxpool.Pool
+	Pool   *sql.DB
 	Logger *slog.Logger
 }
 
@@ -54,7 +54,7 @@ func New(ctx context.Context) (*Context, error) {
 		return nil, fmt.Errorf("build embedder: %w", err)
 	}
 
-	// Wrap embedder with pgx-backed cache
+	// Wrap embedder with SQLite-backed cache
 	cachedEmb := embedder.NewCached(emb, pool)
 
 	reas, err := buildReasoner(cfg)

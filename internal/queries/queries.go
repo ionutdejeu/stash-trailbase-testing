@@ -8,7 +8,6 @@ import (
 	"text/template"
 
 	"github.com/alash3al/sqltmpl"
-	"github.com/pgvector/pgvector-go"
 )
 
 //go:embed *.sql.tmpl
@@ -33,26 +32,18 @@ func New() (*Queries, error) {
 	return &Queries{tpl: tpl}, nil
 }
 
-// RecallEpisodes returns SQL + args for episode vector search.
-// If namespaceIDs is nil, searches all namespaces.
-func (q *Queries) RecallEpisodes(namespaceIDs []int64, vector pgvector.Vector, limit int) (string, []any, error) {
-	args := map[string]any{
-		"vector": vector,
-		"limit":  limit,
-	}
+// RecallEpisodes returns SQL + args for TrailBase-compatible episode candidate fetch.
+func (q *Queries) RecallEpisodes(namespaceIDs []int64) (string, []any, error) {
+	args := map[string]any{}
 	if len(namespaceIDs) > 0 {
 		args["namespace_ids"] = namespaceIDs
 	}
 	return q.tpl.Execute("recall_episodes", args)
 }
 
-// RecallFacts returns SQL + args for fact vector search.
-// If namespaceIDs is nil, searches all namespaces.
-func (q *Queries) RecallFacts(namespaceIDs []int64, vector pgvector.Vector, limit int) (string, []any, error) {
-	args := map[string]any{
-		"vector": vector,
-		"limit":  limit,
-	}
+// RecallFacts returns SQL + args for TrailBase-compatible fact candidate fetch.
+func (q *Queries) RecallFacts(namespaceIDs []int64) (string, []any, error) {
+	args := map[string]any{}
 	if len(namespaceIDs) > 0 {
 		args["namespace_ids"] = namespaceIDs
 	}

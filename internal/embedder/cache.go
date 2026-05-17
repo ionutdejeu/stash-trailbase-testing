@@ -3,19 +3,19 @@ package embedder
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"log"
 	"sync"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/pgvector/pgvector-go"
+	"github.com/alash3al/stash/internal/vector"
 )
 
-// Cached wraps an Embedder with pgx-backed caching and request deduplication.
+// Cached wraps an Embedder with SQLite-backed caching and request deduplication.
 type Cached struct {
 	embedder Embedder
-	pool     *pgxpool.Pool
+	db       *sql.DB
 	inflight sync.Map
 }
 
@@ -26,10 +26,10 @@ type call struct {
 }
 
 // NewCached creates a cached embedder that stores embeddings in the embedding_cache table.
-func NewCached(e Embedder, pool *pgxpool.Pool) *Cached {
+func NewCached(e Embedder, db *sql.DB) *Cached {
 	return &Cached{
 		embedder: e,
-		pool:     pool,
+		db:       db,
 	}
 }
 
@@ -89,8 +89,8 @@ func (c *Cached) Dims() int {
 }
 
 func (c *Cached) getCached(ctx context.Context, hash, model string) ([]float32, error) {
-	var vec pgvector.Vector
-	err := c.pool.QueryRow(ctx,
+	var vec vector.Vector
+	err := c.db.QueryRowContext(ctx,
 		"SELECT embedding FROM embedding_cache WHERE text_hash = $1 AND model = $2",
 		hash, model,
 	).Scan(&vec)
@@ -101,10 +101,10 @@ func (c *Cached) getCached(ctx context.Context, hash, model string) ([]float32, 
 }
 
 func (c *Cached) putCached(ctx context.Context, hash, text string, vec []float32, model string) error {
-	_, err := c.pool.Exec(ctx,
+	_, err := c.db.ExecContext(ctx,
 		`INSERT INTO embedding_cache (text_hash, model, text, embedding)
 		 VALUES ($1, $2, $3, $4) ON CONFLICT (text_hash, model) DO NOTHING`,
-		hash, model, text, pgvector.NewVector(vec),
+		hash, model, text, vector.New(vec),
 	)
 	return err
 }

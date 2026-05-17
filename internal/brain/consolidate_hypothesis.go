@@ -8,7 +8,7 @@ import (
 )
 
 func (b *Brain) consolidateHypothesisEvidence(ctx context.Context, nsID int64, cp *models.ConsolidationProgress) (autoConfirmed, autoRejected, updated, llmCalls int, errs []string) {
-	rows, err := b.pool.Query(ctx,
+	rows, err := b.pool.QueryContext(ctx,
 		`SELECT id, namespace_id, content, confidence, status, verification_plan, method,
 		 confirmed_fact_id, rejection_reason, source_fact_ids, tested_at, confirmed_at, rejected_at,
 		 created_at, updated_at, deleted_at
@@ -37,7 +37,7 @@ func (b *Brain) consolidateHypothesisEvidence(ctx context.Context, nsID int64, c
 		return
 	}
 
-	factRows, err := b.pool.Query(ctx, factSQL, factArgs...)
+	factRows, err := b.pool.QueryContext(ctx, factSQL, factArgs...)
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("fetch facts for hypotheses: %v", err))
 		return
@@ -107,8 +107,8 @@ func (b *Brain) consolidateHypothesisEvidence(ctx context.Context, nsID int64, c
 			autoRejected++
 
 		case r.Verdict == "supports" || r.Verdict == "weakens":
-			_, err := b.pool.Exec(ctx,
-				`UPDATE hypotheses SET confidence = $2, updated_at = now() WHERE id = $1`,
+			_, err := b.pool.ExecContext(ctx,
+				`UPDATE hypotheses SET confidence = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
 				r.HypothesisID, r.NewConfidence,
 			)
 			if err != nil {

@@ -168,7 +168,7 @@ CALL THIS WHEN:
 
 NEVER SKIP: no existing namespace fits the topic, or user introduces a genuinely new project, person, or area.
 
-GOOD: slug="/projects/stash" name="Stash" description="Persistent memory system for AI agents. Go + PostgreSQL + pgvector."
+GOOD: slug="/projects/stash" name="Stash" description="Persistent memory system for AI agents. Go + TrailBase + SQLite."
 GOOD: slug="/users/alice" name="Alice" description="Backend engineer. Prefers Go. Works on Stash. On Mohamed's team."
 GOOD: slug="/projects/myapp/backend" name="MyApp Backend" description="API service layer. Auth, search, and billing endpoints."
 BAD: slug="myapp" — missing leading slash
@@ -192,7 +192,7 @@ Good: 'Stash Memory System'. Bad: 'stash' or 'project'.
 
 {{define "create_namespace_description_param"}}
 What this namespace is for. Must be specific — future sessions use this to decide where to store and search.
-Good: 'Persistent memory system built in Go with PostgreSQL and pgvector. Stores episodes, facts, and working context for AI agents.'
+Good: 'Persistent memory system built in Go with TrailBase and SQLite. Stores episodes, facts, and working context for AI agents.'
 Bad: 'memory stuff' or 'project things' or leaving it empty.
 {{end}}
 
@@ -223,8 +223,8 @@ NEVER SKIP WHEN:
 
 WHAT GOOD INPUT LOOKS LIKE:
 "User prefers REST over GraphQL. Rejected gRPC due to client complexity on mobile."
-"Project uses PostgreSQL 15 with pgvector extension. Migrations managed via goose."
-"Decided to use sqltmpl + pgx instead of GORM. Reason: pgvector needs raw SQL anyway."
+"Project uses TrailBase with a SQLite-backed store. Migrations are kept compatible with TrailBase and goose."
+"Decided to store embeddings in SQLite-compatible fields and score vectors in application code for TrailBase compatibility."
 "Session summary: Completed schema design for episodes, facts, contexts, namespaces tables."
 
 WHAT BAD INPUT LOOKS LIKE:
@@ -293,7 +293,7 @@ NAMESPACE STRATEGY:
 
 WHAT GOOD QUERIES LOOK LIKE:
 "user graphql preference"
-"database migration approach postgresql"
+"database migration approach sqlite"
 "Mohamed team structure and roles"
 "authentication rejected approaches"
 
@@ -417,7 +417,7 @@ SWITCHING TOPICS — do this in order:
 
 WHAT GOOD FOCUS LOOKS LIKE:
 "Refactoring auth middleware to use JWT tokens. Goal: reduce database load on login."
-"Implementing episodes table in Stash. Current blocker: pgvector untyped column behavior."
+"Implementing episodes table in Stash. Current blocker: keeping vector storage compatible with TrailBase SQLite."
 "Investigating consolidation worker hanging on namespaces with 1000+ episodes."
 
 WHAT BAD FOCUS LOOKS LIKE:
@@ -805,14 +805,14 @@ COST OF NOT CALLING: Uncertainties remain untracked. You make the same assumptio
 
 {{define "create_hypothesis_content"}}
 The hypothesis statement. Must be specific and testable. "X might be true" is not enough — state what X actually is.
-Good: 'The project uses PostgreSQL 15 specifically, not just any version.'
-Bad: 'something about the database' or 'maybe postgres'.
+Good: 'The project uses TrailBase with a SQLite-backed store, not a generic hosted database.'
+Bad: 'something about the database' or 'maybe sql'.
 {{end}}
 
 
 {{define "create_hypothesis_verification_plan"}}
 How you would verify or disprove this hypothesis. What evidence would confirm it? What evidence would deny it? Must be specific enough to act on.
-Good: 'If the user mentions PostgreSQL version in a future session, check if it is 15. If they mention upgrading from 14, this is confirmed.'
+Good: 'If the user mentions the TrailBase data directory or SQLite file path in a future session, treat that as the canonical store location.'
 Bad: 'check later' or 'wait and see'.
 {{end}}
 
@@ -1104,8 +1104,8 @@ BEFORE CALLING:
 
 WHAT GOOD INPUT LOOKS LIKE:
 - content: "Used GORM for the ORM layer"
-  reason: "GORM doesn't support pgvector columns; raw SQL needed for vector operations"
-  lesson: "Use pgx directly with sqltmpl for any project that needs vector search. ORMs add abstraction cost without benefit when raw SQL is required anyway."
+  reason: "ORM abstractions did not fit the TrailBase-compatible SQLite schema and vector storage model"
+  lesson: "Use explicit SQL plus lightweight helpers when TrailBase compatibility matters more than database abstraction."
   goal_id: 42 (linked to "Implement database layer")
 
 - content: "Deployed with Docker Compose on a single node"
@@ -1130,13 +1130,13 @@ Good: 'Used GORM ORM for the database layer'. Bad: 'tried an ORM' or 'database t
 
 {{define "create_failure_reason"}}
 Why it didn't work. Root cause, not symptom.
-Good: 'GORM lacks pgvector support; custom column types are not handled'. Bad: 'it broke' or 'error'.
+Good: 'The ORM did not fit the SQLite schema and vector serialization requirements'. Bad: 'it broke' or 'error'.
 {{end}}
 
 
 {{define "create_failure_lesson"}}
 What to do instead. The anti-repeat field. Must be specific enough that a future session can act on it.
-Good: 'Use pgx with sqltmpl for projects needing vector search. ORMs add cost without benefit when raw SQL is required.'. Bad: 'try something else' or 'don't do that'.
+Good: 'Use explicit SQL and serialized vectors for TrailBase-compatible projects.'. Bad: 'try something else' or 'don't do that'.
 {{end}}
 
 

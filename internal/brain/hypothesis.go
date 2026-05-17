@@ -6,8 +6,7 @@ import (
 	"time"
 
 	"github.com/alash3al/stash/internal/models"
-	"github.com/jackc/pgx/v5"
-	"github.com/pgvector/pgvector-go"
+	"github.com/alash3al/stash/internal/vector"
 )
 
 var (
@@ -17,8 +16,8 @@ var (
 )
 
 var validTransitions = map[string][]string{
-	"proposed": {"testing", "rejected"},
-	"testing":  {"confirmed", "rejected", "proposed"},
+	"proposed":  {"testing", "rejected"},
+	"testing":   {"confirmed", "rejected", "proposed"},
 	"confirmed": {},
 	"rejected":  {},
 }
@@ -36,7 +35,7 @@ func isValidTransition(from, to string) bool {
 	return false
 }
 
-func scanHypothesis(h *models.Hypothesis, row pgx.Row) error {
+func scanHypothesis(h *models.Hypothesis, row rowScanner) error {
 	return row.Scan(
 		&h.ID, &h.NamespaceID, &h.Content, &h.Confidence, &h.Status,
 		&h.VerificationPlan, &h.Method, &h.ConfirmedFactID, &h.RejectionReason,
@@ -45,7 +44,7 @@ func scanHypothesis(h *models.Hypothesis, row pgx.Row) error {
 	)
 }
 
-func scanHypothesisRows(rows pgx.Rows) ([]models.Hypothesis, error) {
+func scanHypothesisRows(rows rowsScanner) ([]models.Hypothesis, error) {
 	var result []models.Hypothesis
 	for rows.Next() {
 		var h models.Hypothesis
@@ -72,13 +71,13 @@ func (b *Brain) CreateHypothesis(ctx context.Context, nsID int64, content, verif
 	}
 
 	var h models.Hypothesis
-	err := b.pool.QueryRow(ctx,
+	err := b.pool.QueryRowContext(ctx,
 		`INSERT INTO hypotheses (namespace_id, content, confidence, verification_plan, source_fact_ids)
 		 VALUES ($1, $2, $3, $4, $5)
 		 RETURNING id, namespace_id, content, confidence, status, verification_plan, method,
 		 confirmed_fact_id, rejection_reason, source_fact_ids, tested_at, confirmed_at, rejected_at,
 		 created_at, updated_at, deleted_at`,
-		nsID, content, confidence, verificationPlan, sourceFactIDs,
+		nsID, content, confidence, verificationPlan, vector.Int64Slice(sourceFactIDs),
 	).Scan(
 		&h.ID, &h.NamespaceID, &h.Content, &h.Confidence, &h.Status,
 		&h.VerificationPlan, &h.Method, &h.ConfirmedFactID, &h.RejectionReason,
@@ -101,13 +100,15 @@ func (b *Brain) ListHypotheses(ctx context.Context, namespaceSlugs []string, sta
 	page = page.Sanitize()
 
 	if status != "" {
-		rows, err := b.pool.Query(ctx,
+		placeholders, args := inClause(1, nsIDs)
+		args = append(args, status, page.Limit, page.Offset)
+		rows, err := b.pool.QueryContext(ctx,
 			`SELECT id, namespace_id, content, confidence, status, verification_plan, method,
 			 confirmed_fact_id, rejection_reason, source_fact_ids, tested_at, confirmed_at, rejected_at,
 			 created_at, updated_at, deleted_at
-			 FROM hypotheses WHERE namespace_id = ANY($1) AND status = $2 AND deleted_at IS NULL
-			 ORDER BY updated_at DESC LIMIT $3 OFFSET $4`,
-			nsIDs, status, page.Limit, page.Offset,
+			 FROM hypotheses WHERE namespace_id IN (`+placeholders+`) AND status = $`+fmt.Sprint(len(nsIDs)+1)+` AND deleted_at IS NULL
+			 ORDER BY updated_at DESC LIMIT $`+fmt.Sprint(len(nsIDs)+2)+` OFFSET $`+fmt.Sprint(len(nsIDs)+3),
+			args...,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("list hypotheses: %w", err)
@@ -116,13 +117,15 @@ func (b *Brain) ListHypotheses(ctx context.Context, namespaceSlugs []string, sta
 		return scanHypothesisRows(rows)
 	}
 
-	rows, err := b.pool.Query(ctx,
+	placeholders, args := inClause(1, nsIDs)
+	args = append(args, page.Limit, page.Offset)
+	rows, err := b.pool.QueryContext(ctx,
 		`SELECT id, namespace_id, content, confidence, status, verification_plan, method,
 		 confirmed_fact_id, rejection_reason, source_fact_ids, tested_at, confirmed_at, rejected_at,
 		 created_at, updated_at, deleted_at
-		 FROM hypotheses WHERE namespace_id = ANY($1) AND deleted_at IS NULL
-		 ORDER BY updated_at DESC LIMIT $2 OFFSET $3`,
-		nsIDs, page.Limit, page.Offset,
+		 FROM hypotheses WHERE namespace_id IN (`+placeholders+`) AND deleted_at IS NULL
+		 ORDER BY updated_at DESC LIMIT $`+fmt.Sprint(len(nsIDs)+1)+` OFFSET $`+fmt.Sprint(len(nsIDs)+2),
+		args...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list hypotheses: %w", err)
@@ -134,7 +137,7 @@ func (b *Brain) ListHypotheses(ctx context.Context, namespaceSlugs []string, sta
 // GetHypothesis returns a single hypothesis by ID.
 func (b *Brain) GetHypothesis(ctx context.Context, id int64) (*models.Hypothesis, error) {
 	var h models.Hypothesis
-	err := b.pool.QueryRow(ctx,
+	err := b.pool.QueryRowContext(ctx,
 		`SELECT id, namespace_id, content, confidence, status, verification_plan, method,
 		 confirmed_fact_id, rejection_reason, source_fact_ids, tested_at, confirmed_at, rejected_at,
 		 created_at, updated_at, deleted_at
@@ -147,7 +150,7 @@ func (b *Brain) GetHypothesis(ctx context.Context, id int64) (*models.Hypothesis
 		&h.CreatedAt, &h.UpdatedAt, &h.DeletedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if isNoRows(err) {
 			return nil, ErrHypothesisNotFound
 		}
 		return nil, fmt.Errorf("get hypothesis: %w", err)
@@ -188,7 +191,7 @@ func (b *Brain) UpdateHypothesisStatus(ctx context.Context, id int64, status str
 	}
 
 	var h models.Hypothesis
-	err = b.pool.QueryRow(ctx,
+	err = b.pool.QueryRowContext(ctx,
 		`UPDATE hypotheses SET status = $2, tested_at = $3, confirmed_at = $4, rejected_at = $5, updated_at = $6
 		 WHERE id = $1
 		 RETURNING id, namespace_id, content, confidence, status, verification_plan, method,
@@ -229,24 +232,24 @@ func (b *Brain) ConfirmHypothesis(ctx context.Context, id int64) (*models.Hypoth
 
 	now := time.Now().UTC()
 
-	tx, err := b.pool.Begin(ctx)
+	tx, err := b.pool.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, nil, fmt.Errorf("begin confirm transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer tx.Rollback()
 
 	var factID int64
-	err = tx.QueryRow(ctx,
+	err = tx.QueryRowContext(ctx,
 		`INSERT INTO facts (namespace_id, content, embedding, embedding_model, confidence, valid_from)
 		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-		current.NamespaceID, current.Content, pgvector.NewVector(vec), b.embedder.Model(), current.Confidence, now,
+		current.NamespaceID, current.Content, vector.New(vec), b.embedder.Model(), current.Confidence, now,
 	).Scan(&factID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("insert fact from hypothesis: %w", err)
 	}
 
 	var h models.Hypothesis
-	err = tx.QueryRow(ctx,
+	err = tx.QueryRowContext(ctx,
 		`UPDATE hypotheses SET status = 'confirmed', confirmed_at = $2, confirmed_fact_id = $3, updated_at = $2
 		 WHERE id = $1
 		 RETURNING id, namespace_id, content, confidence, status, verification_plan, method,
@@ -264,7 +267,7 @@ func (b *Brain) ConfirmHypothesis(ctx context.Context, id int64) (*models.Hypoth
 	}
 
 	var f models.Fact
-	err = tx.QueryRow(ctx,
+	err = tx.QueryRowContext(ctx,
 		`SELECT id, namespace_id, content, embedding, embedding_model, confidence,
 		 entity, property, value, valid_from, valid_until, created_at, updated_at, deleted_at
 		 FROM facts WHERE id = $1`,
@@ -278,7 +281,7 @@ func (b *Brain) ConfirmHypothesis(ctx context.Context, id int64) (*models.Hypoth
 		return nil, nil, fmt.Errorf("scan confirmed fact: %w", err)
 	}
 
-	if err := tx.Commit(ctx); err != nil {
+	if err := tx.Commit(); err != nil {
 		return nil, nil, fmt.Errorf("commit confirm: %w", err)
 	}
 
@@ -303,7 +306,7 @@ func (b *Brain) RejectHypothesis(ctx context.Context, id int64, reason string) (
 	}
 
 	var h models.Hypothesis
-	err = b.pool.QueryRow(ctx,
+	err = b.pool.QueryRowContext(ctx,
 		`UPDATE hypotheses SET status = 'rejected', rejected_at = $2, rejection_reason = $3, updated_at = $2
 		 WHERE id = $1
 		 RETURNING id, namespace_id, content, confidence, status, verification_plan, method,
@@ -344,9 +347,9 @@ func (b *Brain) RefineHypothesis(ctx context.Context, id int64, content, verific
 		confidence = current.Confidence
 	}
 
-	now := time.Now().UTC
+	now := time.Now().UTC()
 	var h models.Hypothesis
-	err = b.pool.QueryRow(ctx,
+	err = b.pool.QueryRowContext(ctx,
 		`UPDATE hypotheses SET content = $2, verification_plan = $3, confidence = $4,
 		 status = 'proposed', tested_at = NULL, updated_at = $5
 		 WHERE id = $1
@@ -368,14 +371,18 @@ func (b *Brain) RefineHypothesis(ctx context.Context, id int64, content, verific
 
 // DeleteHypothesis soft-deletes a hypothesis by ID.
 func (b *Brain) DeleteHypothesis(ctx context.Context, id int64) error {
-	tag, err := b.pool.Exec(ctx,
-		"UPDATE hypotheses SET deleted_at = now(), updated_at = now() WHERE id = $1 AND deleted_at IS NULL",
+	tag, err := b.pool.ExecContext(ctx,
+		"UPDATE hypotheses SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND deleted_at IS NULL",
 		id,
 	)
 	if err != nil {
 		return fmt.Errorf("delete hypothesis: %w", err)
 	}
-	if tag.RowsAffected() == 0 {
+	affected, err := rowsAffected(tag)
+	if err != nil {
+		return fmt.Errorf("delete hypothesis rows affected: %w", err)
+	}
+	if affected == 0 {
 		return ErrHypothesisNotFound
 	}
 	return nil

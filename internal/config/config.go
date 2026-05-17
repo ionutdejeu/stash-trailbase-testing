@@ -9,8 +9,8 @@ import (
 )
 
 type Config struct {
-	// Store (PostgreSQL only)
-	StoreDSN      string `env:"STASH_POSTGRES_DSN,required"`
+	// Store (TrailBase / SQLite primary)
+	StoreDSN      string `env:"STASH_STORE_DSN,required"`
 	VectorDim     int    `env:"STASH_VECTOR_DIM,required"`
 	MaxResultSize int    `env:"STASH_MAX_RESULT_SIZE,required"`
 
@@ -33,10 +33,10 @@ type Config struct {
 	ConsolidationSimilarityThreshold float64 `env:"STASH_CONSOLIDATION_SIMILARITY_THRESHOLD" envDefault:"0.85"`
 	ConsolidationDedupThreshold      float64 `env:"STASH_CONSOLIDATION_DEDUP_THRESHOLD" envDefault:"0.85"`
 	ConsolidationWindow              string  `env:"STASH_CONSOLIDATION_WINDOW" envDefault:"168h"`
-	DecayFactor                          float64 `env:"STASH_DECAY_FACTOR" envDefault:"0.95"`
-	ExpiryThreshold                      float32 `env:"STASH_EXPIRY_THRESHOLD" envDefault:"0.1"`
-	HypothesisAutoConfirmThreshold       float32 `env:"STASH_HYPOTHESIS_AUTO_CONFIRM_THRESHOLD" envDefault:"0.9"`
-	HypothesisAutoRejectThreshold        float32 `env:"STASH_HYPOTHESIS_AUTO_REJECT_THRESHOLD" envDefault:"0.9"`
+	DecayFactor                      float64 `env:"STASH_DECAY_FACTOR" envDefault:"0.95"`
+	ExpiryThreshold                  float32 `env:"STASH_EXPIRY_THRESHOLD" envDefault:"0.1"`
+	HypothesisAutoConfirmThreshold   float32 `env:"STASH_HYPOTHESIS_AUTO_CONFIRM_THRESHOLD" envDefault:"0.9"`
+	HypothesisAutoRejectThreshold    float32 `env:"STASH_HYPOTHESIS_AUTO_REJECT_THRESHOLD" envDefault:"0.9"`
 }
 
 func NewFromFile(filename string) (*Config, error) {

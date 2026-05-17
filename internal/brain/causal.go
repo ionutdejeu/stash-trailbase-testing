@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/alash3al/stash/internal/models"
-	"github.com/jackc/pgx/v5"
 )
 
 var ErrCausalLinkNotFound = fmt.Errorf("brain: causal link not found")
@@ -27,7 +26,7 @@ func (b *Brain) DetectCausalLinks(ctx context.Context, nsID int64, facts []model
 			continue
 		}
 
-		_, err := b.pool.Exec(ctx,
+		_, err := b.pool.ExecContext(ctx,
 			`INSERT INTO causal_links (namespace_id, cause_fact_id, effect_fact_id, confidence, method)
 			 VALUES ($1, $2, $3, $4, 'extracted')
 			 ON CONFLICT (cause_fact_id, effect_fact_id) WHERE deleted_at IS NULL DO NOTHING`,
@@ -51,11 +50,13 @@ func (b *Brain) ListCausalLinks(ctx context.Context, namespaceSlugs []string, pa
 
 	page = page.Sanitize()
 
-	rows, err := b.pool.Query(ctx,
-		`SELECT id, namespace_id, cause_fact_id, effect_fact_id, confidence, method, created_at, deleted_at
-		 FROM causal_links WHERE namespace_id = ANY($1) AND deleted_at IS NULL
-		 ORDER BY id LIMIT $2 OFFSET $3`,
-		nsIDs, page.Limit, page.Offset,
+	placeholders, nsArgs := inClause(1, nsIDs)
+	args := append(nsArgs, page.Limit, page.Offset)
+	rows, err := b.pool.QueryContext(ctx,
+		fmt.Sprintf(`SELECT id, namespace_id, cause_fact_id, effect_fact_id, confidence, method, created_at, deleted_at
+		 FROM causal_links WHERE namespace_id IN (%s) AND deleted_at IS NULL
+		 ORDER BY id LIMIT $%d OFFSET $%d`, placeholders, len(nsArgs)+1, len(nsArgs)+2),
+		args...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list causal links: %w", err)
@@ -80,7 +81,7 @@ func (b *Brain) CreateCausalLink(ctx context.Context, nsID, causeFactID, effectF
 	}
 
 	var cl models.CausalLink
-	err := b.pool.QueryRow(ctx,
+	err := b.pool.QueryRowContext(ctx,
 		`INSERT INTO causal_links (namespace_id, cause_fact_id, effect_fact_id, confidence, method)
 		 VALUES ($1, $2, $3, $4, 'asserted')
 		 ON CONFLICT (cause_fact_id, effect_fact_id) WHERE deleted_at IS NULL DO NOTHING
@@ -88,7 +89,7 @@ func (b *Brain) CreateCausalLink(ctx context.Context, nsID, causeFactID, effectF
 		nsID, causeFactID, effectFactID, confidence,
 	).Scan(&cl.ID, &cl.NamespaceID, &cl.CauseFactID, &cl.EffectFactID, &cl.Confidence, &cl.Method, &cl.CreatedAt)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if isNoRows(err) {
 			return nil, fmt.Errorf("brain: causal link already exists between facts %d and %d", causeFactID, effectFactID)
 		}
 		return nil, fmt.Errorf("create causal link: %w", err)
@@ -98,14 +99,18 @@ func (b *Brain) CreateCausalLink(ctx context.Context, nsID, causeFactID, effectF
 
 // DeleteCausalLink soft-deletes a causal link by ID.
 func (b *Brain) DeleteCausalLink(ctx context.Context, id int64) error {
-	tag, err := b.pool.Exec(ctx,
-		"UPDATE causal_links SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL",
+	tag, err := b.pool.ExecContext(ctx,
+		"UPDATE causal_links SET deleted_at = CURRENT_TIMESTAMP WHERE id = $1 AND deleted_at IS NULL",
 		id,
 	)
 	if err != nil {
 		return fmt.Errorf("delete causal link: %w", err)
 	}
-	if tag.RowsAffected() == 0 {
+	affected, err := rowsAffected(tag)
+	if err != nil {
+		return fmt.Errorf("delete causal link rows affected: %w", err)
+	}
+	if affected == 0 {
 		return ErrCausalLinkNotFound
 	}
 	return nil
@@ -143,7 +148,7 @@ func (b *Brain) TraceCausalChain(ctx context.Context, factID int64, direction st
 		anchorCol, anchorCol, joinCol,
 	)
 
-	rows, err := b.pool.Query(ctx, query, factID, maxDepth)
+	rows, err := b.pool.QueryContext(ctx, query, factID, maxDepth)
 	if err != nil {
 		return nil, fmt.Errorf("trace causal chain: %w", err)
 	}

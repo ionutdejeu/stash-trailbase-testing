@@ -7,7 +7,7 @@
 <!-- Primary SEO -->
 <title>Stash — Persistent Memory for AI Agents</title>
 <meta name="description" content="Stash gives any AI agent a persistent memory, knowledge graph, goals, and self-model. Works with Claude, ChatGPT, Ollama, and any MCP-compatible agent. Open source. Self-hosted.">
-<meta name="keywords" content="AI memory, persistent memory, MCP, model context protocol, AI agents, RAG alternative, pgvector, Ollama, OpenRouter, open source AI memory, agent memory, LLM memory, knowledge graph, AI tools">
+<meta name="keywords" content="AI memory, persistent memory, MCP, model context protocol, AI agents, RAG alternative, TrailBase, SQLite, Ollama, OpenRouter, open source AI memory, agent memory, LLM memory, knowledge graph, AI tools">
 <meta name="author" content="Mohamed Al-Ashaal">
 <meta name="robots" content="index, follow">
 <link rel="canonical" href="https://alash3al.github.io/stash/">
@@ -1670,7 +1670,7 @@
 
 <!-- HERO -->
 <section id="hero">
-  <div class="hero-eyebrow">Open Source · MCP Native · PostgreSQL + pgvector</div>
+  <div class="hero-eyebrow">Open Source · MCP Native · TrailBase + SQLite</div>
   <h1 class="hero-headline">
     Your AI<br>
     has <em>amnesia.</em>
@@ -1814,7 +1814,7 @@
         </div>
         <div class="stack-layer dim">
           <div class="stack-layer-dot"></div>
-          <div class="stack-layer-name">postgres + pgvector</div>
+          <div class="stack-layer-name">trailbase + sqlite</div>
           <div class="stack-layer-desc">Battle-tested infrastructure</div>
         </div>
       </div>
@@ -2124,7 +2124,7 @@
       <div class="qs-left">
         <div class="section-tag">Express Setup</div>
         <h2 class="qs-headline">Up and running<br>in <em>3 commands.</em></h2>
-        <p class="qs-body">No infrastructure to set up. No dependencies to install manually. Docker Compose handles everything — Postgres, pgvector, Stash, all wired together and ready.</p>
+        <p class="qs-body">No infrastructure to set up. No dependencies to install manually. Docker Compose handles everything — TrailBase, SQLite storage, and Stash, all wired together and ready.</p>
         <div class="qs-steps">
           <div class="qs-step">
             <div class="qs-step-num">1</div>
@@ -2161,7 +2161,7 @@
             <div><span class="t-comment"># 3. launch everything</span></div>
             <div><span class="t-prompt">$</span> <span class="t-cmd">docker compose up</span></div>
             <div>&nbsp;</div>
-            <div><span class="t-output">✓ postgres + pgvector ready</span></div>
+            <div><span class="t-output">✓ trailbase + sqlite ready</span></div>
             <div><span class="t-output">✓ stash migrations applied</span></div>
             <div><span class="t-output">✓ mcp server listening</span></div>
             <div><span class="t-output">✓ consolidation running in background</span></div>
@@ -2507,7 +2507,7 @@
     <div class="dim-warning reveal">
       <span class="dim-warning-icon">⚠️</span>
       <div>
-        <strong>Set <code>STASH_VECTOR_DIM</code> before your first run and never change it.</strong> pgvector locks the embedding dimension at initialization — changing it later requires a full database reset. The default embedding model is <code>openai/text-embedding-3-small</code> with <code>STASH_VECTOR_DIM=1536</code>.
+        <strong>Set <code>STASH_VECTOR_DIM</code> before your first run and keep it stable.</strong> Stash stores embeddings in a TrailBase-compatible SQLite schema, so changing dimensions later still requires rebuilding stored embeddings. The default embedding model is <code>openai/text-embedding-3-small</code> with <code>STASH_VECTOR_DIM=1536</code>.
       </div>
     </div>
 
@@ -2550,7 +2550,7 @@
       Give your agent<br>
       <em>a memory.</em>
     </div>
-    <p class="cta-sub reveal">Open source. Apache 2.0 licensed. Backed by PostgreSQL. Works with any MCP-compatible agent.</p>
+    <p class="cta-sub reveal">Open source. Apache 2.0 licensed. Backed by TrailBase and SQLite. Works with any MCP-compatible agent.</p>
     <div class="cta-actions reveal">
       <a href="https://github.com/alash3al/stash" class="btn-primary">→ GitHub Repository</a>
       <a href="https://alash3al.com" class="btn-secondary">Built by @alash3al</a>

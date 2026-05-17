@@ -6,25 +6,24 @@ import (
 	"time"
 
 	"github.com/alash3al/stash/internal/models"
-	"github.com/jackc/pgx/v5"
 )
 
 var (
-	ErrGoalNotFound = fmt.Errorf("brain: goal not found")
+	ErrGoalNotFound  = fmt.Errorf("brain: goal not found")
 	ErrGoalNotActive = fmt.Errorf("brain: goal is not active")
 )
 
 const goalColumns = `id, namespace_id, parent_id, content, status, priority, notes,
 completed_at, abandoned_at, created_at, updated_at, deleted_at`
 
-func scanGoal(h *models.Goal, row pgx.Row) error {
+func scanGoal(h *models.Goal, row rowScanner) error {
 	return row.Scan(
 		&h.ID, &h.NamespaceID, &h.ParentID, &h.Content, &h.Status, &h.Priority, &h.Notes,
 		&h.CompletedAt, &h.AbandonedAt, &h.CreatedAt, &h.UpdatedAt, &h.DeletedAt,
 	)
 }
 
-func scanGoalRows(rows pgx.Rows) ([]models.Goal, error) {
+func scanGoalRows(rows rowsScanner) ([]models.Goal, error) {
 	var result []models.Goal
 	for rows.Next() {
 		var g models.Goal
@@ -56,7 +55,7 @@ func (b *Brain) CreateGoal(ctx context.Context, nsID int64, content string, pare
 	}
 
 	var g models.Goal
-	err := b.pool.QueryRow(ctx,
+	err := b.pool.QueryRowContext(ctx,
 		`INSERT INTO goals (namespace_id, parent_id, content, priority)
 		 VALUES ($1, $2, $3, $4)
 		 RETURNING `+goalColumns,
@@ -80,9 +79,10 @@ func (b *Brain) ListGoals(ctx context.Context, namespaceSlugs []string, status s
 
 	page = page.Sanitize()
 
-	query := `SELECT ` + goalColumns + ` FROM goals WHERE namespace_id = ANY($1) AND deleted_at IS NULL`
-	args := []any{nsIDs}
-	argN := 1
+	placeholders, nsArgs := inClause(1, nsIDs)
+	query := fmt.Sprintf(`SELECT %s FROM goals WHERE namespace_id IN (%s) AND deleted_at IS NULL`, goalColumns, placeholders)
+	args := nsArgs
+	argN := len(args)
 
 	if status != "" {
 		argN++
@@ -106,7 +106,7 @@ func (b *Brain) ListGoals(ctx context.Context, namespaceSlugs []string, status s
 	query += fmt.Sprintf(" OFFSET $%d", argN)
 	args = append(args, page.Offset)
 
-	rows, err := b.pool.Query(ctx, query, args...)
+	rows, err := b.pool.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list goals: %w", err)
 	}
@@ -117,14 +117,14 @@ func (b *Brain) ListGoals(ctx context.Context, namespaceSlugs []string, status s
 // GetGoal returns a single goal by ID.
 func (b *Brain) GetGoal(ctx context.Context, id int64) (*models.Goal, error) {
 	var g models.Goal
-	err := b.pool.QueryRow(ctx,
+	err := b.pool.QueryRowContext(ctx,
 		`SELECT `+goalColumns+` FROM goals WHERE id = $1`, id,
 	).Scan(
 		&g.ID, &g.NamespaceID, &g.ParentID, &g.Content, &g.Status, &g.Priority, &g.Notes,
 		&g.CompletedAt, &g.AbandonedAt, &g.CreatedAt, &g.UpdatedAt, &g.DeletedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if isNoRows(err) {
 			return nil, ErrGoalNotFound
 		}
 		return nil, fmt.Errorf("get goal: %w", err)
@@ -134,9 +134,9 @@ func (b *Brain) GetGoal(ctx context.Context, id int64) (*models.Goal, error) {
 
 // GetGoalProgress returns sub-goal counts for a parent goal.
 func (b *Brain) GetGoalProgress(ctx context.Context, id int64) (total, completed int, err error) {
-	err = b.pool.QueryRow(ctx,
-		`SELECT COUNT(*) FILTER (WHERE status IN ('active', 'completed')),
-		        COUNT(*) FILTER (WHERE status = 'completed')
+	err = b.pool.QueryRowContext(ctx,
+		`SELECT SUM(CASE WHEN status IN ('active', 'completed') THEN 1 ELSE 0 END),
+		        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END)
 		 FROM goals WHERE parent_id = $1 AND deleted_at IS NULL`,
 		id,
 	).Scan(&total, &completed)
@@ -160,7 +160,7 @@ func (b *Brain) CompleteGoal(ctx context.Context, id int64, notes string) (*mode
 	now := time.Now().UTC()
 
 	var g models.Goal
-	err = b.pool.QueryRow(ctx,
+	err = b.pool.QueryRowContext(ctx,
 		`UPDATE goals SET status = 'completed', completed_at = $2, notes = CASE WHEN $3 = '' THEN notes ELSE $3 END, updated_at = $2
 		 WHERE id = $1
 		 RETURNING `+goalColumns,
@@ -184,9 +184,9 @@ func (b *Brain) CompleteGoal(ctx context.Context, id int64, notes string) (*mode
 
 func (b *Brain) autoCompleteParent(ctx context.Context, parentID int64) error {
 	var total, completed int
-	err := b.pool.QueryRow(ctx,
-		`SELECT COUNT(*) FILTER (WHERE status IN ('active', 'completed')),
-		        COUNT(*) FILTER (WHERE status = 'completed')
+	err := b.pool.QueryRowContext(ctx,
+		`SELECT SUM(CASE WHEN status IN ('active', 'completed') THEN 1 ELSE 0 END),
+		        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END)
 		 FROM goals WHERE parent_id = $1 AND deleted_at IS NULL`,
 		parentID,
 	).Scan(&total, &completed)
@@ -196,7 +196,7 @@ func (b *Brain) autoCompleteParent(ctx context.Context, parentID int64) error {
 
 	if total > 0 && total == completed {
 		now := time.Now().UTC()
-		_, err := b.pool.Exec(ctx,
+		_, err := b.pool.ExecContext(ctx,
 			`UPDATE goals SET status = 'completed', completed_at = $2, updated_at = $2 WHERE id = $1 AND status = 'active'`,
 			parentID, now,
 		)
@@ -205,7 +205,7 @@ func (b *Brain) autoCompleteParent(ctx context.Context, parentID int64) error {
 		}
 
 		var grandparentID *int64
-		err = b.pool.QueryRow(ctx,
+		err = b.pool.QueryRowContext(ctx,
 			"SELECT parent_id FROM goals WHERE id = $1", parentID,
 		).Scan(&grandparentID)
 		if err != nil {
@@ -233,7 +233,7 @@ func (b *Brain) AbandonGoal(ctx context.Context, id int64, notes string) (*model
 	now := time.Now().UTC()
 
 	var g models.Goal
-	err = b.pool.QueryRow(ctx,
+	err = b.pool.QueryRowContext(ctx,
 		`UPDATE goals SET status = 'abandoned', abandoned_at = $2, notes = CASE WHEN $3 = '' THEN notes ELSE $3 END, updated_at = $2
 		 WHERE id = $1
 		 RETURNING `+goalColumns,
@@ -272,7 +272,7 @@ func (b *Brain) UpdateGoal(ctx context.Context, id int64, content string, priori
 	now := time.Now().UTC()
 
 	var g models.Goal
-	err = b.pool.QueryRow(ctx,
+	err = b.pool.QueryRowContext(ctx,
 		`UPDATE goals SET content = $2, priority = $3, notes = $4, updated_at = $5
 		 WHERE id = $1
 		 RETURNING `+goalColumns,
@@ -289,14 +289,18 @@ func (b *Brain) UpdateGoal(ctx context.Context, id int64, content string, priori
 
 // DeleteGoal soft-deletes a goal by ID. Children cascade via FK.
 func (b *Brain) DeleteGoal(ctx context.Context, id int64) error {
-	tag, err := b.pool.Exec(ctx,
-		"UPDATE goals SET deleted_at = now(), updated_at = now() WHERE id = $1 AND deleted_at IS NULL",
+	tag, err := b.pool.ExecContext(ctx,
+		"UPDATE goals SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND deleted_at IS NULL",
 		id,
 	)
 	if err != nil {
 		return fmt.Errorf("delete goal: %w", err)
 	}
-	if tag.RowsAffected() == 0 {
+	affected, err := rowsAffected(tag)
+	if err != nil {
+		return fmt.Errorf("delete goal rows affected: %w", err)
+	}
+	if affected == 0 {
 		return ErrGoalNotFound
 	}
 	return nil

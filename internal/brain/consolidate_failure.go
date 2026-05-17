@@ -6,11 +6,11 @@ import (
 	"time"
 
 	"github.com/alash3al/stash/internal/models"
-	"github.com/pgvector/pgvector-go"
+	"github.com/alash3al/stash/internal/vector"
 )
 
 func (b *Brain) consolidateFailurePatterns(ctx context.Context, nsID int64, cp *models.ConsolidationProgress) (repeats, patterns, llmCalls int, errs []string) {
-	rows, err := b.pool.Query(ctx,
+	rows, err := b.pool.QueryContext(ctx,
 		`SELECT id, namespace_id, goal_id, content, reason, lesson, created_at, deleted_at
 		 FROM failures WHERE namespace_id = $1 AND deleted_at IS NULL AND id > $2
 		 ORDER BY id LIMIT 50`,
@@ -50,7 +50,7 @@ func (b *Brain) consolidateFailurePatterns(ctx context.Context, nsID int64, cp *
 		return
 	}
 
-	epRows, err := b.pool.Query(ctx, epSQL, epArgs...)
+	epRows, err := b.pool.QueryContext(ctx, epSQL, epArgs...)
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("fetch episodes for failures: %v", err))
 		return
@@ -93,7 +93,7 @@ func (b *Brain) consolidateFailurePatterns(ctx context.Context, nsID int64, cp *
 		switch r.Type {
 		case "repetition":
 			content := fmt.Sprintf("REPEAT FAILURE [failure #%d]: %s", r.FailureID, r.Evidence)
-			_, err := b.pool.Exec(ctx,
+			_, err := b.pool.ExecContext(ctx,
 				`INSERT INTO episodes (namespace_id, content, embedding, embedding_model, occurred_at)
 				 VALUES ($1, $2, NULL, '', $3)`,
 				nsID, content, time.Now().UTC(),
@@ -113,10 +113,10 @@ func (b *Brain) consolidateFailurePatterns(ctx context.Context, nsID int64, cp *
 				errs = append(errs, fmt.Sprintf("embed failure pattern fact: %v", embErr))
 				continue
 			}
-			_, err := b.pool.Exec(ctx,
+			_, err := b.pool.ExecContext(ctx,
 				`INSERT INTO facts (namespace_id, content, embedding, embedding_model, confidence, valid_from)
 				 VALUES ($1, $2, $3, $4, $5, $6)`,
-				nsID, r.PatternFact, pgvector.NewVector(vec), b.embedder.Model(), r.Confidence, time.Now().UTC(),
+				nsID, r.PatternFact, vector.New(vec), b.embedder.Model(), r.Confidence, time.Now().UTC(),
 			)
 			if err != nil {
 				errs = append(errs, fmt.Sprintf("insert failure pattern fact: %v", err))

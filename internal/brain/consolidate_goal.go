@@ -8,7 +8,7 @@ import (
 )
 
 func (b *Brain) consolidateGoalProgress(ctx context.Context, nsID int64, cp *models.ConsolidationProgress) (annotated, suggestedComplete, llmCalls int, errs []string) {
-	rows, err := b.pool.Query(ctx,
+	rows, err := b.pool.QueryContext(ctx,
 		`SELECT id, namespace_id, parent_id, content, status, priority, notes,
 		 completed_at, abandoned_at, created_at, updated_at, deleted_at
 		 FROM goals WHERE namespace_id = $1 AND status = 'active' AND deleted_at IS NULL`,
@@ -36,7 +36,7 @@ func (b *Brain) consolidateGoalProgress(ctx context.Context, nsID int64, cp *mod
 		return
 	}
 
-	factRows, err := b.pool.Query(ctx, factSQL, factArgs...)
+	factRows, err := b.pool.QueryContext(ctx, factSQL, factArgs...)
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("fetch facts for goals: %v", err))
 		return
@@ -85,8 +85,8 @@ func (b *Brain) consolidateGoalProgress(ctx context.Context, nsID int64, cp *mod
 			continue
 		}
 
-		_, err := b.pool.Exec(ctx,
-			`UPDATE goals SET notes = notes || $2, updated_at = now() WHERE id = $1`,
+		_, err := b.pool.ExecContext(ctx,
+			`UPDATE goals SET notes = notes || $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
 			a.GoalID, note,
 		)
 		if err != nil {

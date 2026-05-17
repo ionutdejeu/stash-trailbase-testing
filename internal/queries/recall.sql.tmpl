@@ -3,17 +3,16 @@ SELECT
     id,
     namespace_id,
     content,
+    embedding,
     occurred_at,
-    created_at,
-    1 - (embedding <=> {{.Bind .Args.vector}}) AS score
+    created_at
 FROM episodes
 WHERE deleted_at IS NULL
     AND embedding IS NOT NULL
 {{if .Args.namespace_ids}}
     AND namespace_id IN ({{range $i, $id := .Args.namespace_ids}}{{if $i}}, {{end}}{{$.Bind $id}}{{end}})
 {{end}}
-ORDER BY embedding <=> {{.Bind .Args.vector}}
-LIMIT {{.Bind .Args.limit}}
+ORDER BY created_at DESC
 {{end}}
 
 {{define "recall_facts"}}
@@ -21,15 +20,14 @@ SELECT
     id,
     namespace_id,
     content,
+    embedding,
     confidence,
-    created_at,
-    1 - (embedding <=> {{.Bind .Args.vector}}) AS score
+    created_at
 FROM facts
 WHERE deleted_at IS NULL
     AND embedding IS NOT NULL
 {{if .Args.namespace_ids}}
     AND namespace_id IN ({{range $i, $id := .Args.namespace_ids}}{{if $i}}, {{end}}{{$.Bind $id}}{{end}})
 {{end}}
-ORDER BY embedding <=> {{.Bind .Args.vector}}
-LIMIT {{.Bind .Args.limit}}
+ORDER BY created_at DESC
 {{end}}

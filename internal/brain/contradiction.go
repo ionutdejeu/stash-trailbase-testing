@@ -7,7 +7,6 @@ import (
 
 	"github.com/alash3al/stash/internal/models"
 	"github.com/alash3al/stash/internal/reasoner"
-	"github.com/jackc/pgx/v5"
 )
 
 var ErrContradictionNotFound = fmt.Errorf("brain: contradiction not found")
@@ -20,7 +19,7 @@ func (b *Brain) DetectContradictions(ctx context.Context, nsID int64, fact *mode
 		return 0, 0, nil
 	}
 
-	rows, err := b.pool.Query(ctx,
+	rows, err := b.pool.QueryContext(ctx,
 		`SELECT id, content, value, confidence FROM facts
 		 WHERE namespace_id = $1 AND entity = $2 AND property = $3
 		 AND id != $4 AND deleted_at IS NULL AND valid_until IS NULL`,
@@ -100,7 +99,7 @@ func (b *Brain) DetectContradictions(ctx context.Context, nsID int64, fact *mode
 func (b *Brain) autoSupersede(ctx context.Context, nsID, oldFactID, newFactID int64, entity, property, oldValue, newValue string, confidence float32) error {
 	now := time.Now().UTC()
 
-	_, err := b.pool.Exec(ctx,
+	_, err := b.pool.ExecContext(ctx,
 		"UPDATE facts SET valid_until = $2, updated_at = $3 WHERE id = $1",
 		oldFactID, now, now,
 	)
@@ -109,7 +108,7 @@ func (b *Brain) autoSupersede(ctx context.Context, nsID, oldFactID, newFactID in
 	}
 
 	resolution := "superseded"
-	_, err = b.pool.Exec(ctx,
+	_, err = b.pool.ExecContext(ctx,
 		`INSERT INTO contradictions (namespace_id, old_fact_id, new_fact_id, entity, property, old_value, new_value, confidence, method, resolved, resolution, resolved_at)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'auto', TRUE, $9, $10)`,
 		nsID, oldFactID, newFactID, entity, property, oldValue, newValue, confidence, resolution, now,
@@ -122,7 +121,7 @@ func (b *Brain) autoSupersede(ctx context.Context, nsID, oldFactID, newFactID in
 }
 
 func (b *Brain) recordContradiction(ctx context.Context, nsID, oldFactID, newFactID int64, entity, property, oldValue, newValue string, confidence float32, method string) error {
-	_, err := b.pool.Exec(ctx,
+	_, err := b.pool.ExecContext(ctx,
 		`INSERT INTO contradictions (namespace_id, old_fact_id, new_fact_id, entity, property, old_value, new_value, confidence, method)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
 		nsID, oldFactID, newFactID, entity, property, oldValue, newValue, confidence, method,
@@ -142,12 +141,14 @@ func (b *Brain) ListContradictions(ctx context.Context, namespaceSlugs []string,
 
 	page = page.Sanitize()
 
-	rows, err := b.pool.Query(ctx,
-		`SELECT id, namespace_id, old_fact_id, new_fact_id, entity, property, old_value, new_value,
+	placeholders, args := inClause(1, nsIDs)
+	args = append(args, page.Limit, page.Offset)
+	rows, err := b.pool.QueryContext(ctx,
+		fmt.Sprintf(`SELECT id, namespace_id, old_fact_id, new_fact_id, entity, property, old_value, new_value,
 		 confidence, method, resolved, resolution, resolved_at, created_at
-		 FROM contradictions WHERE namespace_id = ANY($1) AND resolved = FALSE
-		 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
-		nsIDs, page.Limit, page.Offset,
+		 FROM contradictions WHERE namespace_id IN (%s) AND resolved = FALSE
+		 ORDER BY created_at DESC LIMIT $%d OFFSET $%d`, placeholders, len(nsIDs)+1, len(nsIDs)+2),
+		args...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list contradictions: %w", err)
@@ -174,14 +175,18 @@ func (b *Brain) ListContradictions(ctx context.Context, namespaceSlugs []string,
 func (b *Brain) ResolveContradiction(ctx context.Context, id int64, resolution string) error {
 	now := time.Now().UTC()
 
-	tag, err := b.pool.Exec(ctx,
+	tag, err := b.pool.ExecContext(ctx,
 		`UPDATE contradictions SET resolved = TRUE, resolution = $2, resolved_at = $3 WHERE id = $1`,
 		id, resolution, now,
 	)
 	if err != nil {
 		return fmt.Errorf("resolve contradiction: %w", err)
 	}
-	if tag.RowsAffected() == 0 {
+	affected, err := rowsAffected(tag)
+	if err != nil {
+		return fmt.Errorf("resolve contradiction rows affected: %w", err)
+	}
+	if affected == 0 {
 		return ErrContradictionNotFound
 	}
 	return nil
@@ -190,7 +195,7 @@ func (b *Brain) ResolveContradiction(ctx context.Context, id int64, resolution s
 // GetContradiction returns a single contradiction by ID.
 func (b *Brain) GetContradiction(ctx context.Context, id int64) (*models.Contradiction, error) {
 	var c models.Contradiction
-	err := b.pool.QueryRow(ctx,
+	err := b.pool.QueryRowContext(ctx,
 		`SELECT id, namespace_id, old_fact_id, new_fact_id, entity, property, old_value, new_value,
 		 confidence, method, resolved, resolution, resolved_at, created_at
 		 FROM contradictions WHERE id = $1`,
@@ -202,7 +207,7 @@ func (b *Brain) GetContradiction(ctx context.Context, id int64) (*models.Contrad
 		&c.ResolvedAt, &c.CreatedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if isNoRows(err) {
 			return nil, ErrContradictionNotFound
 		}
 		return nil, fmt.Errorf("get contradiction: %w", err)

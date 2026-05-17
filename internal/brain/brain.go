@@ -2,6 +2,7 @@ package brain
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"regexp"
 	"strings"
@@ -10,7 +11,6 @@ import (
 	"github.com/alash3al/stash/internal/embedder"
 	"github.com/alash3al/stash/internal/queries"
 	"github.com/alash3al/stash/internal/reasoner"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 var (
@@ -19,11 +19,11 @@ var (
 	ErrFactNotFound      = fmt.Errorf("brain: fact not found")
 	ErrEmptyContent      = fmt.Errorf("brain: content cannot be empty")
 	ErrContentTooLong    = fmt.Errorf("brain: content exceeds maximum length")
-	ErrInvalidPath = fmt.Errorf("brain: namespace path must start with / and contain valid segments (lowercase alphanumeric, hyphens, underscores)")
+	ErrInvalidPath       = fmt.Errorf("brain: namespace path must start with / and contain valid segments (lowercase alphanumeric, hyphens, underscores)")
 
-	pathSegmentRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
+	pathSegmentRe         = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 	ErrNamespacesRequired = fmt.Errorf("brain: at least one namespace is required")
-	maxContentLen = 10000
+	maxContentLen         = 10000
 )
 
 const (
@@ -52,10 +52,10 @@ func (p Pagination) Sanitize() Pagination {
 }
 
 type Config struct {
-	BatchSize           int
-	SimilarityThreshold float64
-	DedupThreshold      float64
-	Window              time.Duration
+	BatchSize                      int
+	SimilarityThreshold            float64
+	DedupThreshold                 float64
+	Window                         time.Duration
 	DecayFactor                    float64
 	ExpiryThreshold                float32
 	HypothesisAutoConfirmThreshold float32
@@ -76,14 +76,14 @@ func DefaultConfig() Config {
 }
 
 type Brain struct {
-	pool     *pgxpool.Pool
+	pool     *sql.DB
 	embedder embedder.Embedder
 	reasoner reasoner.Reasoner
 	queries  *queries.Queries
 	config   Config
 }
 
-func New(pool *pgxpool.Pool, e embedder.Embedder, r reasoner.Reasoner, q *queries.Queries, cfg Config) (*Brain, error) {
+func New(pool *sql.DB, e embedder.Embedder, r reasoner.Reasoner, q *queries.Queries, cfg Config) (*Brain, error) {
 	if pool == nil {
 		return nil, fmt.Errorf("brain: pool is required")
 	}
@@ -150,7 +150,7 @@ func splitPath(path string) []string {
 // Returns ErrNamespaceNotFound if no matching namespace exists.
 func (b *Brain) resolveNamespaceID(ctx context.Context, path string) (int64, error) {
 	var id int64
-	err := b.pool.QueryRow(ctx,
+	err := b.pool.QueryRowContext(ctx,
 		"SELECT id FROM namespaces WHERE slug = $1", path,
 	).Scan(&id)
 	if err != nil {
@@ -199,7 +199,7 @@ func (b *Brain) resolveNamespaceIDs(ctx context.Context, paths []string) ([]int6
 // For "/", returns all namespace IDs.
 func (b *Brain) resolveNamespaceIDWithDescendants(ctx context.Context, path string) ([]int64, error) {
 	if path == "/" {
-		rows, err := b.pool.Query(ctx, "SELECT id FROM namespaces")
+		rows, err := b.pool.QueryContext(ctx, "SELECT id FROM namespaces")
 		if err != nil {
 			return nil, fmt.Errorf("resolve all namespaces: %w", err)
 		}
@@ -216,7 +216,7 @@ func (b *Brain) resolveNamespaceIDWithDescendants(ctx context.Context, path stri
 		return ids, rows.Err()
 	}
 
-	rows, err := b.pool.Query(ctx,
+	rows, err := b.pool.QueryContext(ctx,
 		"SELECT id FROM namespaces WHERE slug = $1 OR slug LIKE $2",
 		path, path+"/%",
 	)
@@ -242,13 +242,13 @@ func (b *Brain) resolveNamespaceIDWithDescendants(ctx context.Context, path stri
 }
 
 func (b *Brain) Health(ctx context.Context) error {
-	return b.pool.Ping(ctx)
+	return b.pool.PingContext(ctx)
 }
 
 func (b *Brain) Ready(ctx context.Context) error {
-	_, err := b.pool.Exec(ctx, "SELECT 1 FROM consolidation_progress LIMIT 0")
+	_, err := b.pool.ExecContext(ctx, "SELECT 1 FROM consolidation_progress LIMIT 0")
 	if err != nil {
 		return fmt.Errorf("ready: %w", err)
 	}
-	return b.pool.Ping(ctx)
+	return b.pool.PingContext(ctx)
 }

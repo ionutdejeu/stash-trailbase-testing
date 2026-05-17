@@ -15,7 +15,15 @@ cp .env.example .env   # edit with your API key + model
 docker compose up
 ```
 
-That's it. Postgres + pgvector, migrations, MCP server with background consolidation — all in one command.
+That's it. TrailBase, SQLite-compatible migrations, MCP server with background consolidation — all in one command.
+
+## TrailBase Storage
+
+Stash now targets TrailBase directly.
+
+1. Start TrailBase with the provided `traildepot/migrations`.
+2. Set `STASH_STORE_DSN` to the TrailBase SQLite database path, typically `traildepot/data/main.db`.
+3. Start the Stash CLI or services as usual.
 
 ## MCP Client Setup
 
