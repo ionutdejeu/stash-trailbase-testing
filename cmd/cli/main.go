@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/alash3al/stash/internal/bootstrap"
@@ -15,6 +16,9 @@ func main() {
 		Name:  "stash",
 		Usage: "Stash - Persistent Memory for AI",
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
+			if !commandRequiresBootstrap(os.Args[1:]) {
+				return ctx, nil
+			}
 			if _, ok := cmd.Root().Metadata["bootstrapCtx"]; ok {
 				return ctx, nil
 			}
@@ -442,6 +446,17 @@ func main() {
 				Usage: "MCP server for agent integration",
 				Commands: []*cli.Command{
 					{
+						Name:   "copilot-config",
+						Usage:  "Print a GitHub Copilot CLI MCP config for this repo",
+						Action: mcpCopilotConfigCmd,
+						Flags: []cli.Flag{
+							&cli.StringFlag{Name: "name", Value: "stash", Usage: "Server name in Copilot CLI"},
+							&cli.StringFlag{Name: "project-root", Usage: "Project root to run the MCP server from (default: current directory)"},
+							&cli.StringFlag{Name: "config", Value: ".env", Usage: "Path to the Stash env file passed as STASHCONFIG"},
+							&cli.BoolFlag{Name: "with-consolidation", Usage: "Run consolidation alongside the stdio MCP server"},
+						},
+					},
+					{
 						Name:   "serve",
 						Usage:  "Start MCP server over SSE",
 						Action: mcpServeCmd,
@@ -470,5 +485,38 @@ func main() {
 
 	if err := cmd.Run(context.Background(), os.Args); err != nil {
 		log.Fatal(err)
+	}
+}
+
+func commandRequiresBootstrap(args []string) bool {
+	for _, arg := range args {
+		switch arg {
+		case "-h", "--help", "help", "version", "--version":
+			return false
+		}
+	}
+
+	var commands []string
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "-") {
+			continue
+		}
+		commands = append(commands, arg)
+	}
+
+	if len(commands) == 0 {
+		return false
+	}
+
+	switch commands[0] {
+	case "env":
+		return false
+	case "mcp":
+		if len(commands) == 1 {
+			return false
+		}
+		return commands[1] != "copilot-config"
+	default:
+		return true
 	}
 }

@@ -83,6 +83,52 @@ Point any MCP-compatible client at that URL. Example configs:
 
 Works with any agent that supports MCP over SSE — Claude Desktop, Cursor, Windsurf, Cline, Continue, OpenAI Agents, Ollama, OpenRouter, and more.
 
+## GitHub Copilot CLI
+
+Stash already exposes MCP over stdio, which is the transport GitHub Copilot CLI expects for local MCP servers.
+
+1. Create your runtime config first:
+
+```bash
+cp .env.example .env
+# edit .env with your API key, model, and TrailBase path
+```
+
+2. Generate a ready-to-paste Copilot CLI config for this repo:
+
+```bash
+go run ./cmd/cli mcp copilot-config
+```
+
+That command prints JSON for `~/.copilot/mcp-config.json` and points `STASHCONFIG` at this repo's `.env` file, so you do not need to duplicate your `STASH_*` values into Copilot CLI.
+
+Example output:
+
+```json
+{
+  "mcpServers": {
+    "stash": {
+      "type": "local",
+      "command": "powershell",
+      "args": [
+        "-NoLogo",
+        "-NoProfile",
+        "-Command",
+        "Set-Location -LiteralPath 'C:\\path\\to\\stash'; go run ./cmd/cli mcp execute"
+      ],
+      "env": {
+        "STASHCONFIG": "C:\\path\\to\\stash\\.env"
+      },
+      "tools": [
+        "*"
+      ]
+    }
+  }
+}
+```
+
+If you prefer the interactive flow inside Copilot CLI, run `/mcp add` and use the generated values for the local server command, args, and environment.
+
 ## What It Does
 
 Stash is a cognitive layer between your AI agent and the world. Episodes become facts. Facts become relationships. Relationships become patterns. Patterns become wisdom.
