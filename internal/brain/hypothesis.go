@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/alash3al/stash/internal/models"
-	"github.com/alash3al/stash/internal/vector"
+	"github.com/ionutdejeu/stash-trailbase-testing/internal/models"
+	"github.com/ionutdejeu/stash-trailbase-testing/internal/vector"
 )
 
 var (
@@ -36,24 +36,47 @@ func isValidTransition(from, to string) bool {
 }
 
 func scanHypothesis(h *models.Hypothesis, row rowScanner) error {
-	return row.Scan(
+	var testedAtRaw any
+	var confirmedAtRaw any
+	var rejectedAtRaw any
+	var createdAtRaw any
+	var updatedAtRaw any
+	var deletedAtRaw any
+	if err := row.Scan(
 		&h.ID, &h.NamespaceID, &h.Content, &h.Confidence, &h.Status,
 		&h.VerificationPlan, &h.Method, &h.ConfirmedFactID, &h.RejectionReason,
-		&h.SourceFactIDs, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
-		&h.CreatedAt, &h.UpdatedAt, &h.DeletedAt,
-	)
+		&h.SourceFactIDs, &testedAtRaw, &confirmedAtRaw, &rejectedAtRaw,
+		&createdAtRaw, &updatedAtRaw, &deletedAtRaw,
+	); err != nil {
+		return err
+	}
+	var err error
+	if h.TestedAt, err = parseOptionalSQLiteTime(testedAtRaw); err != nil {
+		return fmt.Errorf("parse tested_at: %w", err)
+	}
+	if h.ConfirmedAt, err = parseOptionalSQLiteTime(confirmedAtRaw); err != nil {
+		return fmt.Errorf("parse confirmed_at: %w", err)
+	}
+	if h.RejectedAt, err = parseOptionalSQLiteTime(rejectedAtRaw); err != nil {
+		return fmt.Errorf("parse rejected_at: %w", err)
+	}
+	if h.CreatedAt, err = parseSQLiteTime(createdAtRaw); err != nil {
+		return fmt.Errorf("parse created_at: %w", err)
+	}
+	if h.UpdatedAt, err = parseSQLiteTime(updatedAtRaw); err != nil {
+		return fmt.Errorf("parse updated_at: %w", err)
+	}
+	if h.DeletedAt, err = parseOptionalSQLiteTime(deletedAtRaw); err != nil {
+		return fmt.Errorf("parse deleted_at: %w", err)
+	}
+	return nil
 }
 
 func scanHypothesisRows(rows rowsScanner) ([]models.Hypothesis, error) {
 	var result []models.Hypothesis
 	for rows.Next() {
 		var h models.Hypothesis
-		if err := rows.Scan(
-			&h.ID, &h.NamespaceID, &h.Content, &h.Confidence, &h.Status,
-			&h.VerificationPlan, &h.Method, &h.ConfirmedFactID, &h.RejectionReason,
-			&h.SourceFactIDs, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
-			&h.CreatedAt, &h.UpdatedAt, &h.DeletedAt,
-		); err != nil {
+		if err := scanHypothesis(&h, rows); err != nil {
 			return nil, fmt.Errorf("scan hypothesis: %w", err)
 		}
 		result = append(result, h)
@@ -71,19 +94,14 @@ func (b *Brain) CreateHypothesis(ctx context.Context, nsID int64, content, verif
 	}
 
 	var h models.Hypothesis
-	err := b.pool.QueryRowContext(ctx,
+	err := scanHypothesis(&h, b.pool.QueryRowContext(ctx,
 		`INSERT INTO hypotheses (namespace_id, content, confidence, verification_plan, source_fact_ids)
 		 VALUES ($1, $2, $3, $4, $5)
 		 RETURNING id, namespace_id, content, confidence, status, verification_plan, method,
 		 confirmed_fact_id, rejection_reason, source_fact_ids, tested_at, confirmed_at, rejected_at,
 		 created_at, updated_at, deleted_at`,
 		nsID, content, confidence, verificationPlan, vector.Int64Slice(sourceFactIDs),
-	).Scan(
-		&h.ID, &h.NamespaceID, &h.Content, &h.Confidence, &h.Status,
-		&h.VerificationPlan, &h.Method, &h.ConfirmedFactID, &h.RejectionReason,
-		&h.SourceFactIDs, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
-		&h.CreatedAt, &h.UpdatedAt, &h.DeletedAt,
-	)
+	))
 	if err != nil {
 		return nil, fmt.Errorf("create hypothesis: %w", err)
 	}
@@ -137,18 +155,13 @@ func (b *Brain) ListHypotheses(ctx context.Context, namespaceSlugs []string, sta
 // GetHypothesis returns a single hypothesis by ID.
 func (b *Brain) GetHypothesis(ctx context.Context, id int64) (*models.Hypothesis, error) {
 	var h models.Hypothesis
-	err := b.pool.QueryRowContext(ctx,
+	err := scanHypothesis(&h, b.pool.QueryRowContext(ctx,
 		`SELECT id, namespace_id, content, confidence, status, verification_plan, method,
 		 confirmed_fact_id, rejection_reason, source_fact_ids, tested_at, confirmed_at, rejected_at,
 		 created_at, updated_at, deleted_at
 		 FROM hypotheses WHERE id = $1`,
 		id,
-	).Scan(
-		&h.ID, &h.NamespaceID, &h.Content, &h.Confidence, &h.Status,
-		&h.VerificationPlan, &h.Method, &h.ConfirmedFactID, &h.RejectionReason,
-		&h.SourceFactIDs, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
-		&h.CreatedAt, &h.UpdatedAt, &h.DeletedAt,
-	)
+	))
 	if err != nil {
 		if isNoRows(err) {
 			return nil, ErrHypothesisNotFound
@@ -191,19 +204,14 @@ func (b *Brain) UpdateHypothesisStatus(ctx context.Context, id int64, status str
 	}
 
 	var h models.Hypothesis
-	err = b.pool.QueryRowContext(ctx,
+	err = scanHypothesis(&h, b.pool.QueryRowContext(ctx,
 		`UPDATE hypotheses SET status = $2, tested_at = $3, confirmed_at = $4, rejected_at = $5, updated_at = $6
 		 WHERE id = $1
 		 RETURNING id, namespace_id, content, confidence, status, verification_plan, method,
 		 confirmed_fact_id, rejection_reason, source_fact_ids, tested_at, confirmed_at, rejected_at,
 		 created_at, updated_at, deleted_at`,
 		id, status, testedAt, confirmedAt, rejectedAt, now,
-	).Scan(
-		&h.ID, &h.NamespaceID, &h.Content, &h.Confidence, &h.Status,
-		&h.VerificationPlan, &h.Method, &h.ConfirmedFactID, &h.RejectionReason,
-		&h.SourceFactIDs, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
-		&h.CreatedAt, &h.UpdatedAt, &h.DeletedAt,
-	)
+	))
 	if err != nil {
 		return nil, fmt.Errorf("update hypothesis status: %w", err)
 	}
@@ -249,34 +257,25 @@ func (b *Brain) ConfirmHypothesis(ctx context.Context, id int64) (*models.Hypoth
 	}
 
 	var h models.Hypothesis
-	err = tx.QueryRowContext(ctx,
+	err = scanHypothesis(&h, tx.QueryRowContext(ctx,
 		`UPDATE hypotheses SET status = 'confirmed', confirmed_at = $2, confirmed_fact_id = $3, updated_at = $2
 		 WHERE id = $1
 		 RETURNING id, namespace_id, content, confidence, status, verification_plan, method,
 		 confirmed_fact_id, rejection_reason, source_fact_ids, tested_at, confirmed_at, rejected_at,
 		 created_at, updated_at, deleted_at`,
 		id, now, factID,
-	).Scan(
-		&h.ID, &h.NamespaceID, &h.Content, &h.Confidence, &h.Status,
-		&h.VerificationPlan, &h.Method, &h.ConfirmedFactID, &h.RejectionReason,
-		&h.SourceFactIDs, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
-		&h.CreatedAt, &h.UpdatedAt, &h.DeletedAt,
-	)
+	))
 	if err != nil {
 		return nil, nil, fmt.Errorf("update hypothesis confirmed: %w", err)
 	}
 
 	var f models.Fact
-	err = tx.QueryRowContext(ctx,
+	err = scanFact(&f, tx.QueryRowContext(ctx,
 		`SELECT id, namespace_id, content, embedding, embedding_model, confidence,
 		 entity, property, value, valid_from, valid_until, created_at, updated_at, deleted_at
 		 FROM facts WHERE id = $1`,
 		factID,
-	).Scan(
-		&f.ID, &f.NamespaceID, &f.Content, &f.Embedding, &f.EmbeddingModel,
-		&f.Confidence, &f.Entity, &f.Property, &f.Value,
-		&f.ValidFrom, &f.ValidUntil, &f.CreatedAt, &f.UpdatedAt, &f.DeletedAt,
-	)
+	), true)
 	if err != nil {
 		return nil, nil, fmt.Errorf("scan confirmed fact: %w", err)
 	}
@@ -306,19 +305,14 @@ func (b *Brain) RejectHypothesis(ctx context.Context, id int64, reason string) (
 	}
 
 	var h models.Hypothesis
-	err = b.pool.QueryRowContext(ctx,
+	err = scanHypothesis(&h, b.pool.QueryRowContext(ctx,
 		`UPDATE hypotheses SET status = 'rejected', rejected_at = $2, rejection_reason = $3, updated_at = $2
 		 WHERE id = $1
 		 RETURNING id, namespace_id, content, confidence, status, verification_plan, method,
 		 confirmed_fact_id, rejection_reason, source_fact_ids, tested_at, confirmed_at, rejected_at,
 		 created_at, updated_at, deleted_at`,
 		id, now, reasonPtr,
-	).Scan(
-		&h.ID, &h.NamespaceID, &h.Content, &h.Confidence, &h.Status,
-		&h.VerificationPlan, &h.Method, &h.ConfirmedFactID, &h.RejectionReason,
-		&h.SourceFactIDs, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
-		&h.CreatedAt, &h.UpdatedAt, &h.DeletedAt,
-	)
+	))
 	if err != nil {
 		return nil, fmt.Errorf("reject hypothesis: %w", err)
 	}
@@ -349,7 +343,7 @@ func (b *Brain) RefineHypothesis(ctx context.Context, id int64, content, verific
 
 	now := time.Now().UTC()
 	var h models.Hypothesis
-	err = b.pool.QueryRowContext(ctx,
+	err = scanHypothesis(&h, b.pool.QueryRowContext(ctx,
 		`UPDATE hypotheses SET content = $2, verification_plan = $3, confidence = $4,
 		 status = 'proposed', tested_at = NULL, updated_at = $5
 		 WHERE id = $1
@@ -357,12 +351,7 @@ func (b *Brain) RefineHypothesis(ctx context.Context, id int64, content, verific
 		 confirmed_fact_id, rejection_reason, source_fact_ids, tested_at, confirmed_at, rejected_at,
 		 created_at, updated_at, deleted_at`,
 		id, content, verificationPlan, confidence, now,
-	).Scan(
-		&h.ID, &h.NamespaceID, &h.Content, &h.Confidence, &h.Status,
-		&h.VerificationPlan, &h.Method, &h.ConfirmedFactID, &h.RejectionReason,
-		&h.SourceFactIDs, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
-		&h.CreatedAt, &h.UpdatedAt, &h.DeletedAt,
-	)
+	))
 	if err != nil {
 		return nil, fmt.Errorf("refine hypothesis: %w", err)
 	}

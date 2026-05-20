@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alash3al/stash/internal/bootstrap"
-	"github.com/alash3al/stash/internal/brain"
+	"github.com/ionutdejeu/stash-trailbase-testing/internal/bootstrap"
+	"github.com/ionutdejeu/stash-trailbase-testing/internal/brain"
 	"github.com/urfave/cli/v3"
 )
 

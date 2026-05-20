@@ -9,7 +9,7 @@ Open source. Self-hosted. Works with any MCP-compatible agent.
 ## Quick Start
 
 ```bash
-git clone https://github.com/alash3al/stash.git
+git clone https://github.com/ionutdejeu/stash-trailbase-testing.git
 cd stash
 cp .env.example .env   # edit with your API key + model
 docker compose up
@@ -22,7 +22,7 @@ That's it. TrailBase, SQLite-compatible migrations, MCP server with background c
 Stash now targets TrailBase directly.
 
 1. Start TrailBase with the provided `traildepot/migrations`.
-2. Set `STASH_STORE_DSN` to the TrailBase SQLite database path, typically `traildepot/data/main.db`.
+2. Set `STASH_STORE_DSN` to the TrailBase SQLite database path, typically `traildepot/traildepot/data/main.db`.
 3. Start the Stash CLI or services as usual.
 
 ## MCP Client Setup
@@ -87,6 +87,9 @@ Works with any agent that supports MCP over SSE — Claude Desktop, Cursor, Wind
 
 Stash already exposes MCP over stdio, which is the transport GitHub Copilot CLI expects for local MCP servers.
 
+Copilot CLI is only the MCP client in this setup. It is not the embedding or inference backend for Stash.
+If you want to avoid direct OpenAI billing, point Stash at GitHub Models with a GitHub PAT instead.
+
 1. Create your runtime config first:
 
 ```bash
@@ -128,6 +131,31 @@ Example output:
 ```
 
 If you prefer the interactive flow inside Copilot CLI, run `/mcp add` and use the generated values for the local server command, args, and environment.
+
+## GitHub Models Backend
+
+Stash can use GitHub-hosted models for both chat-style reasoning and embeddings.
+This is separate from Copilot CLI itself.
+There is no separate Copilot embeddings endpoint wired here; the practical local setup is GitHub Models. For convenience, `STASH_AI_PROVIDER=copilot` is an alias for the GitHub Models defaults, but it still requires a GitHub token with `models:read`.
+
+Set these values in [.env.example](.env.example):
+
+```bash
+STASH_AI_PROVIDER=copilot
+STASH_OPENAI_API_KEY=github_pat_with_models_read
+STASH_GITHUB_MODELS_API_VERSION=2026-03-10
+STASH_EMBEDDING_MODEL=openai/text-embedding-3-small
+STASH_REASONER_MODEL=openai/gpt-4.1-mini
+STASH_VECTOR_DIM=1536
+```
+
+If you prefer the explicit provider name, `STASH_AI_PROVIDER=github-models` works the same way.
+
+If you want usage attributed to a GitHub organization, use:
+
+```bash
+STASH_OPENAI_BASE_URL=https://models.github.ai/orgs/YOUR_ORG/inference
+```
 
 ## What It Does
 

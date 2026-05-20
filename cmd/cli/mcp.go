@@ -15,8 +15,8 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/alash3al/stash/internal/bootstrap"
-	"github.com/alash3al/stash/internal/brain"
+	"github.com/ionutdejeu/stash-trailbase-testing/internal/bootstrap"
+	"github.com/ionutdejeu/stash-trailbase-testing/internal/brain"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/urfave/cli/v3"

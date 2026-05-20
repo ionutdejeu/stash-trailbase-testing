@@ -9,12 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alash3al/stash/internal/brain"
-	"github.com/alash3al/stash/internal/config"
-	"github.com/alash3al/stash/internal/db"
-	"github.com/alash3al/stash/internal/embedder"
-	"github.com/alash3al/stash/internal/queries"
-	"github.com/alash3al/stash/internal/reasoner"
+	"github.com/ionutdejeu/stash-trailbase-testing/internal/brain"
+	"github.com/ionutdejeu/stash-trailbase-testing/internal/config"
+	"github.com/ionutdejeu/stash-trailbase-testing/internal/db"
+	"github.com/ionutdejeu/stash-trailbase-testing/internal/embedder"
+	"github.com/ionutdejeu/stash-trailbase-testing/internal/queries"
+	"github.com/ionutdejeu/stash-trailbase-testing/internal/reasoner"
 )
 
 // Context holds all initialized services.

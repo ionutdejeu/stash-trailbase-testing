@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "stash": {
+      "type": "remote",
+      "url": "http://localhost:8080/sse"
+    }
+  }
+}

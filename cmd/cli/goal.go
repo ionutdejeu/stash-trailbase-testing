@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/alash3al/stash/internal/brain"
+	"github.com/ionutdejeu/stash-trailbase-testing/internal/brain"
 	"github.com/urfave/cli/v3"
 )
 
@@ -77,8 +77,8 @@ func goalShowCmd(ctx context.Context, cmd *cli.Command) error {
 	total, completed, _ := bc.Brain.GetGoalProgress(ctx, id)
 
 	return printJSON(map[string]any{
-		"goal":       g,
-		"sub_goals":  map[string]int{"total": total, "completed": completed},
+		"goal":      g,
+		"sub_goals": map[string]int{"total": total, "completed": completed},
 	})
 }
 

@@ -14,11 +14,12 @@ type Config struct {
 	VectorDim     int    `env:"STASH_VECTOR_DIM,required"`
 	MaxResultSize int    `env:"STASH_MAX_RESULT_SIZE,required"`
 
-	// OpenAI (embeddings + reasoning)
-	OpenAIAPIKey   string `env:"STASH_OPENAI_API_KEY,required"`
-	OpenAIBaseURL  string `env:"STASH_OPENAI_BASE_URL,required"`
-	EmbeddingModel string `env:"STASH_EMBEDDING_MODEL,required"`
-	ReasonerModel  string `env:"STASH_REASONER_MODEL,required"`
+	// LLM API (embeddings + reasoning)
+	OpenAIAPIKey     string `env:"STASH_OPENAI_API_KEY,required"`
+	OpenAIBaseURL    string `env:"STASH_OPENAI_BASE_URL"`
+	GitHubAPIVersion string `env:"STASH_GITHUB_MODELS_API_VERSION" envDefault:"2026-03-10"`
+	EmbeddingModel   string `env:"STASH_EMBEDDING_MODEL,required"`
+	ReasonerModel    string `env:"STASH_REASONER_MODEL,required"`
 
 	// Memory
 	ContextTTL time.Duration `env:"STASH_CONTEXT_TTL,required"`

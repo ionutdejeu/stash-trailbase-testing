@@ -5,8 +5,88 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/alash3al/stash/internal/models"
+	"github.com/ionutdejeu/stash-trailbase-testing/internal/models"
 )
+
+func scanFact(f *models.Fact, row rowScanner, includeDeleted bool) error {
+	var validFromRaw any
+	var validUntilRaw any
+	var createdAtRaw any
+	var updatedAtRaw any
+	var deletedAtRaw any
+	dest := []any{
+		&f.ID, &f.NamespaceID, &f.Content, &f.Embedding, &f.EmbeddingModel,
+		&f.Confidence, &f.Entity, &f.Property, &f.Value,
+		&validFromRaw, &validUntilRaw, &createdAtRaw, &updatedAtRaw,
+	}
+	if includeDeleted {
+		dest = append(dest, &deletedAtRaw)
+	}
+	if err := row.Scan(dest...); err != nil {
+		return err
+	}
+	var err error
+	if f.ValidFrom, err = parseOptionalSQLiteTime(validFromRaw); err != nil {
+		return fmt.Errorf("parse valid_from: %w", err)
+	}
+	if f.ValidUntil, err = parseOptionalSQLiteTime(validUntilRaw); err != nil {
+		return fmt.Errorf("parse valid_until: %w", err)
+	}
+	if f.CreatedAt, err = parseSQLiteTime(createdAtRaw); err != nil {
+		return fmt.Errorf("parse created_at: %w", err)
+	}
+	if f.UpdatedAt, err = parseSQLiteTime(updatedAtRaw); err != nil {
+		return fmt.Errorf("parse updated_at: %w", err)
+	}
+	if includeDeleted {
+		if f.DeletedAt, err = parseOptionalSQLiteTime(deletedAtRaw); err != nil {
+			return fmt.Errorf("parse deleted_at: %w", err)
+		}
+	}
+	return nil
+}
+
+func scanRelationship(r *models.Relationship, row rowScanner, includeDeleted bool) error {
+	var createdAtRaw any
+	var deletedAtRaw any
+	dest := []any{&r.ID, &r.NamespaceID, &r.FromEntity, &r.RelationType, &r.ToEntity, &r.Confidence, &r.SourceFactID, &createdAtRaw}
+	if includeDeleted {
+		dest = append(dest, &deletedAtRaw)
+	}
+	if err := row.Scan(dest...); err != nil {
+		return err
+	}
+	var err error
+	if r.CreatedAt, err = parseSQLiteTime(createdAtRaw); err != nil {
+		return fmt.Errorf("parse created_at: %w", err)
+	}
+	if includeDeleted {
+		if r.DeletedAt, err = parseOptionalSQLiteTime(deletedAtRaw); err != nil {
+			return fmt.Errorf("parse deleted_at: %w", err)
+		}
+	}
+	return nil
+}
+
+func scanPattern(p *models.Pattern, row rowScanner) error {
+	var createdAtRaw any
+	var updatedAtRaw any
+	var deletedAtRaw any
+	if err := row.Scan(&p.ID, &p.NamespaceID, &p.Content, &p.Confidence, &p.SourceFactIDs, &p.SourceRelIDs, &p.CoherenceScore, &createdAtRaw, &updatedAtRaw, &deletedAtRaw); err != nil {
+		return err
+	}
+	var err error
+	if p.CreatedAt, err = parseSQLiteTime(createdAtRaw); err != nil {
+		return fmt.Errorf("parse created_at: %w", err)
+	}
+	if p.UpdatedAt, err = parseSQLiteTime(updatedAtRaw); err != nil {
+		return fmt.Errorf("parse updated_at: %w", err)
+	}
+	if p.DeletedAt, err = parseOptionalSQLiteTime(deletedAtRaw); err != nil {
+		return fmt.Errorf("parse deleted_at: %w", err)
+	}
+	return nil
+}
 
 // QueryFacts returns facts across namespaces matching the given slug paths, within an optional time range.
 // Each path matches itself and all descendants.
@@ -53,12 +133,7 @@ func (b *Brain) QueryFacts(ctx context.Context, namespaceSlugs []string, since, 
 	var facts []models.Fact
 	for rows.Next() {
 		var f models.Fact
-		if err := rows.Scan(
-			&f.ID, &f.NamespaceID, &f.Content, &f.Embedding, &f.EmbeddingModel,
-			&f.Confidence, &f.Entity, &f.Property, &f.Value,
-			&f.ValidFrom, &f.ValidUntil,
-			&f.CreatedAt, &f.UpdatedAt, &f.DeletedAt,
-		); err != nil {
+		if err := scanFact(&f, rows, true); err != nil {
 			return nil, fmt.Errorf("scan fact: %w", err)
 		}
 		facts = append(facts, f)
@@ -97,17 +172,12 @@ func (b *Brain) PurgeFact(ctx context.Context, factID int64) error {
 // GetFact returns a single fact by ID.
 func (b *Brain) GetFact(ctx context.Context, factID int64) (*models.Fact, error) {
 	var f models.Fact
-	err := b.pool.QueryRowContext(ctx,
+	err := scanFact(&f, b.pool.QueryRowContext(ctx,
 		`SELECT id, namespace_id, content, embedding, embedding_model, confidence,
 		 entity, property, value, valid_from, valid_until, created_at, updated_at, deleted_at
 		 FROM facts WHERE id = $1`,
 		factID,
-	).Scan(
-		&f.ID, &f.NamespaceID, &f.Content, &f.Embedding, &f.EmbeddingModel,
-		&f.Confidence, &f.Entity, &f.Property, &f.Value,
-		&f.ValidFrom, &f.ValidUntil,
-		&f.CreatedAt, &f.UpdatedAt, &f.DeletedAt,
-	)
+	), true)
 	if err != nil {
 		if isNoRows(err) {
 			return nil, ErrFactNotFound
@@ -142,7 +212,7 @@ func (b *Brain) QueryRelationships(ctx context.Context, namespaceSlugs []string,
 	var rels []models.Relationship
 	for rows.Next() {
 		var r models.Relationship
-		if err := rows.Scan(&r.ID, &r.NamespaceID, &r.FromEntity, &r.RelationType, &r.ToEntity, &r.Confidence, &r.SourceFactID, &r.CreatedAt, &r.DeletedAt); err != nil {
+		if err := scanRelationship(&r, rows, true); err != nil {
 			return nil, fmt.Errorf("scan relationship: %w", err)
 		}
 		rels = append(rels, r)
@@ -175,7 +245,7 @@ func (b *Brain) QueryPatterns(ctx context.Context, namespaceSlugs []string, page
 	var patterns []models.Pattern
 	for rows.Next() {
 		var p models.Pattern
-		if err := rows.Scan(&p.ID, &p.NamespaceID, &p.Content, &p.Confidence, &p.SourceFactIDs, &p.SourceRelIDs, &p.CoherenceScore, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt); err != nil {
+		if err := scanPattern(&p, rows); err != nil {
 			return nil, fmt.Errorf("scan pattern: %w", err)
 		}
 		patterns = append(patterns, p)

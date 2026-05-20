@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/alash3al/stash/internal/models"
-	"github.com/alash3al/stash/internal/vector"
+	"github.com/ionutdejeu/stash-trailbase-testing/internal/models"
+	"github.com/ionutdejeu/stash-trailbase-testing/internal/vector"
 )
 
 func (b *Brain) consolidateFailurePatterns(ctx context.Context, nsID int64, cp *models.ConsolidationProgress) (repeats, patterns, llmCalls int, errs []string) {
@@ -26,7 +26,7 @@ func (b *Brain) consolidateFailurePatterns(ctx context.Context, nsID int64, cp *
 	var maxFailureID int64
 	for rows.Next() {
 		var f models.Failure
-		if err := rows.Scan(&f.ID, &f.NamespaceID, &f.GoalID, &f.Content, &f.Reason, &f.Lesson, &f.CreatedAt, &f.DeletedAt); err != nil {
+		if err := scanFailure(&f, rows); err != nil {
 			errs = append(errs, fmt.Sprintf("scan failure: %v", err))
 			continue
 		}
@@ -61,7 +61,7 @@ func (b *Brain) consolidateFailurePatterns(ctx context.Context, nsID int64, cp *
 	var maxEpisodeID int64
 	for epRows.Next() {
 		var e models.Episode
-		if err := epRows.Scan(&e.ID, &e.NamespaceID, &e.Content, &e.Embedding, &e.EmbeddingModel, &e.OccurredAt, &e.CreatedAt); err != nil {
+		if err := scanEpisode(&e, epRows, false); err != nil {
 			errs = append(errs, fmt.Sprintf("scan episode for failures: %v", err))
 			continue
 		}

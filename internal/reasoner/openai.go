@@ -8,7 +8,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/alash3al/stash/internal/models"
+	"github.com/ionutdejeu/stash-trailbase-testing/internal/models"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 )

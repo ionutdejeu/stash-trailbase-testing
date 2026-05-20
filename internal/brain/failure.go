@@ -4,12 +4,28 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/alash3al/stash/internal/models"
+	"github.com/ionutdejeu/stash-trailbase-testing/internal/models"
 )
 
 var ErrFailureNotFound = fmt.Errorf("brain: failure not found")
 
 const failureColumns = `id, namespace_id, goal_id, content, reason, lesson, created_at, deleted_at`
+
+func scanFailure(f *models.Failure, row rowScanner) error {
+	var createdAtRaw any
+	var deletedAtRaw any
+	if err := row.Scan(&f.ID, &f.NamespaceID, &f.GoalID, &f.Content, &f.Reason, &f.Lesson, &createdAtRaw, &deletedAtRaw); err != nil {
+		return err
+	}
+	var err error
+	if f.CreatedAt, err = parseSQLiteTime(createdAtRaw); err != nil {
+		return fmt.Errorf("parse created_at: %w", err)
+	}
+	if f.DeletedAt, err = parseOptionalSQLiteTime(deletedAtRaw); err != nil {
+		return fmt.Errorf("parse deleted_at: %w", err)
+	}
+	return nil
+}
 
 // CreateFailure records what didn't work, why, and what to do instead.
 func (b *Brain) CreateFailure(ctx context.Context, nsID int64, content, reason, lesson string, goalID *int64) (*models.Failure, error) {
@@ -24,12 +40,12 @@ func (b *Brain) CreateFailure(ctx context.Context, nsID int64, content, reason, 
 	}
 
 	var f models.Failure
-	err := b.pool.QueryRowContext(ctx,
+	err := scanFailure(&f, b.pool.QueryRowContext(ctx,
 		`INSERT INTO failures (namespace_id, goal_id, content, reason, lesson)
 		 VALUES ($1, $2, $3, $4, $5)
 		 RETURNING `+failureColumns,
 		nsID, goalID, content, reason, lesson,
-	).Scan(&f.ID, &f.NamespaceID, &f.GoalID, &f.Content, &f.Reason, &f.Lesson, &f.CreatedAt, &f.DeletedAt)
+	))
 	if err != nil {
 		return nil, fmt.Errorf("create failure: %w", err)
 	}
@@ -73,7 +89,7 @@ func (b *Brain) ListFailures(ctx context.Context, namespaceSlugs []string, goalI
 	var result []models.Failure
 	for rows.Next() {
 		var f models.Failure
-		if err := rows.Scan(&f.ID, &f.NamespaceID, &f.GoalID, &f.Content, &f.Reason, &f.Lesson, &f.CreatedAt, &f.DeletedAt); err != nil {
+		if err := scanFailure(&f, rows); err != nil {
 			return nil, fmt.Errorf("scan failure: %w", err)
 		}
 		result = append(result, f)
@@ -84,9 +100,9 @@ func (b *Brain) ListFailures(ctx context.Context, namespaceSlugs []string, goalI
 // GetFailure returns a single failure by ID.
 func (b *Brain) GetFailure(ctx context.Context, id int64) (*models.Failure, error) {
 	var f models.Failure
-	err := b.pool.QueryRowContext(ctx,
+	err := scanFailure(&f, b.pool.QueryRowContext(ctx,
 		`SELECT `+failureColumns+` FROM failures WHERE id = $1`, id,
-	).Scan(&f.ID, &f.NamespaceID, &f.GoalID, &f.Content, &f.Reason, &f.Lesson, &f.CreatedAt, &f.DeletedAt)
+	))
 	if err != nil {
 		if isNoRows(err) {
 			return nil, ErrFailureNotFound

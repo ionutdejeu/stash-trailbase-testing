@@ -4,7 +4,7 @@ package models
 import (
 	"time"
 
-	"github.com/alash3al/stash/internal/vector"
+	"github.com/ionutdejeu/stash-trailbase-testing/internal/vector"
 )
 
 // Namespace owns memory.

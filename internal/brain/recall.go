@@ -6,7 +6,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/alash3al/stash/internal/vector"
+	"github.com/ionutdejeu/stash-trailbase-testing/internal/vector"
 )
 
 // RecallResult is a unified result from semantic search across episodes and facts.
@@ -63,10 +63,14 @@ func (b *Brain) Recall(ctx context.Context, namespaces []string, query string, l
 		var content string
 		var embedding vector.Vector
 		var confidence float32
-		var createdAt time.Time
+		var createdAtRaw any
 
-		if err := factRows.Scan(&id, &namespaceID, &content, &embedding, &confidence, &createdAt); err != nil {
+		if err := factRows.Scan(&id, &namespaceID, &content, &embedding, &confidence, &createdAtRaw); err != nil {
 			return nil, fmt.Errorf("scan fact: %w", err)
+		}
+		createdAt, err := parseSQLiteTime(createdAtRaw)
+		if err != nil {
+			return nil, fmt.Errorf("scan fact created_at: %w", err)
 		}
 		score := vector.CosineSimilarity(embedding.Slice(), vec)
 		results = append(results, RecallResult{
@@ -99,11 +103,19 @@ func (b *Brain) Recall(ctx context.Context, namespaces []string, query string, l
 		var namespaceID int64
 		var content string
 		var embedding vector.Vector
-		var occurredAt time.Time
-		var createdAt time.Time
+		var occurredAtRaw any
+		var createdAtRaw any
 
-		if err := epRows.Scan(&id, &namespaceID, &content, &embedding, &occurredAt, &createdAt); err != nil {
+		if err := epRows.Scan(&id, &namespaceID, &content, &embedding, &occurredAtRaw, &createdAtRaw); err != nil {
 			return nil, fmt.Errorf("scan episode: %w", err)
+		}
+		occurredAt, err := parseSQLiteTime(occurredAtRaw)
+		if err != nil {
+			return nil, fmt.Errorf("scan episode occurred_at: %w", err)
+		}
+		createdAt, err := parseSQLiteTime(createdAtRaw)
+		if err != nil {
+			return nil, fmt.Errorf("scan episode created_at: %w", err)
 		}
 		results = append(results, RecallResult{
 			ID:          id,

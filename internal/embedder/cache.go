@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alash3al/stash/internal/vector"
+	"github.com/ionutdejeu/stash-trailbase-testing/internal/vector"
 )
 
 // Cached wraps an Embedder with SQLite-backed caching and request deduplication.

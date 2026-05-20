@@ -6,9 +6,9 @@ import (
 	"math"
 	"time"
 
-	"github.com/alash3al/stash/internal/models"
-	"github.com/alash3al/stash/internal/observability"
-	"github.com/alash3al/stash/internal/vector"
+	"github.com/ionutdejeu/stash-trailbase-testing/internal/models"
+	"github.com/ionutdejeu/stash-trailbase-testing/internal/observability"
+	"github.com/ionutdejeu/stash-trailbase-testing/internal/vector"
 )
 
 // ConsolidationResult describes the outcome of a consolidation run.
@@ -186,7 +186,7 @@ func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *
 	var episodes []models.Episode
 	for rows.Next() {
 		var e models.Episode
-		if err := rows.Scan(&e.ID, &e.NamespaceID, &e.Content, &e.Embedding, &e.EmbeddingModel, &e.OccurredAt, &e.CreatedAt); err != nil {
+		if err := scanEpisode(&e, rows, false); err != nil {
 			errs = append(errs, fmt.Sprintf("scan episode: %v", err))
 			continue
 		}
@@ -435,7 +435,7 @@ func (b *Brain) consolidateFactsToRelationships(ctx context.Context, nsID int64,
 	var facts []models.Fact
 	for rows.Next() {
 		var f models.Fact
-		if err := rows.Scan(&f.ID, &f.NamespaceID, &f.Content, &f.Embedding, &f.EmbeddingModel, &f.Confidence, &f.Entity, &f.Property, &f.Value, &f.ValidFrom, &f.ValidUntil, &f.CreatedAt, &f.UpdatedAt); err != nil {
+		if err := scanFact(&f, rows, false); err != nil {
 			errs = append(errs, fmt.Sprintf("scan fact: %v", err))
 			continue
 		}
@@ -530,7 +530,7 @@ func (b *Brain) consolidateFactsToCausalLinks(ctx context.Context, nsID int64, c
 	var facts []models.Fact
 	for rows.Next() {
 		var f models.Fact
-		if err := rows.Scan(&f.ID, &f.NamespaceID, &f.Content, &f.Embedding, &f.EmbeddingModel, &f.Confidence, &f.Entity, &f.Property, &f.Value, &f.ValidFrom, &f.ValidUntil, &f.CreatedAt, &f.UpdatedAt); err != nil {
+		if err := scanFact(&f, rows, false); err != nil {
 			errs = append(errs, fmt.Sprintf("scan fact for causal: %v", err))
 			continue
 		}
@@ -572,7 +572,7 @@ func (b *Brain) consolidateToPatterns(ctx context.Context, nsID int64, cp *model
 	var facts []models.Fact
 	for factRows.Next() {
 		var f models.Fact
-		if err := factRows.Scan(&f.ID, &f.NamespaceID, &f.Content, &f.Embedding, &f.EmbeddingModel, &f.Confidence, &f.Entity, &f.Property, &f.Value, &f.ValidFrom, &f.ValidUntil, &f.CreatedAt, &f.UpdatedAt); err != nil {
+		if err := scanFact(&f, factRows, false); err != nil {
 			errs = append(errs, fmt.Sprintf("scan fact for pattern: %v", err))
 			continue
 		}
@@ -604,7 +604,7 @@ func (b *Brain) consolidateToPatterns(ctx context.Context, nsID int64, cp *model
 	var rels []models.Relationship
 	for relRows.Next() {
 		var r models.Relationship
-		if err := relRows.Scan(&r.ID, &r.NamespaceID, &r.FromEntity, &r.RelationType, &r.ToEntity, &r.Confidence, &r.SourceFactID, &r.CreatedAt); err != nil {
+		if err := scanRelationship(&r, relRows, false); err != nil {
 			errs = append(errs, fmt.Sprintf("scan rel for pattern: %v", err))
 			continue
 		}

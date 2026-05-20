@@ -11,6 +11,12 @@
         "serve"
       ],
       "cwd": "${workspaceFolder}",
+      "env": {
+        "STASH_OPENAI_BASE_URL": "https://api.openai.com/v1",
+        "STASH_EMBEDDING_MODEL": "text-embedding-3-small",
+        "STASH_REASONER_MODEL": "gpt-4.1-mini",
+        "STASH_VECTOR_DIM": "1536"
+      },
       "envFile": "${workspaceFolder}/.env",
       "console": "integratedTerminal"
     },
@@ -24,6 +30,12 @@
         "env"
       ],
       "cwd": "${workspaceFolder}",
+      "env": {
+        "STASH_OPENAI_BASE_URL": "https://api.openai.com/v1",
+        "STASH_EMBEDDING_MODEL": "text-embedding-3-small",
+        "STASH_REASONER_MODEL": "gpt-4.1-mini",
+        "STASH_VECTOR_DIM": "1536"
+      },
       "envFile": "${workspaceFolder}/.env",
       "console": "integratedTerminal"
     }

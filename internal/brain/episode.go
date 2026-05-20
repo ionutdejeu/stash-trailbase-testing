@@ -5,9 +5,35 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/alash3al/stash/internal/models"
-	"github.com/alash3al/stash/internal/vector"
+	"github.com/ionutdejeu/stash-trailbase-testing/internal/models"
+	"github.com/ionutdejeu/stash-trailbase-testing/internal/vector"
 )
+
+func scanEpisode(e *models.Episode, row rowScanner, includeDeleted bool) error {
+	var occurredAtRaw any
+	var createdAtRaw any
+	var deletedAtRaw any
+	dest := []any{&e.ID, &e.NamespaceID, &e.Content, &e.Embedding, &e.EmbeddingModel, &occurredAtRaw, &createdAtRaw}
+	if includeDeleted {
+		dest = append(dest, &deletedAtRaw)
+	}
+	if err := row.Scan(dest...); err != nil {
+		return err
+	}
+	var err error
+	if e.OccurredAt, err = parseSQLiteTime(occurredAtRaw); err != nil {
+		return fmt.Errorf("parse occurred_at: %w", err)
+	}
+	if e.CreatedAt, err = parseSQLiteTime(createdAtRaw); err != nil {
+		return fmt.Errorf("parse created_at: %w", err)
+	}
+	if includeDeleted {
+		if e.DeletedAt, err = parseOptionalSQLiteTime(deletedAtRaw); err != nil {
+			return fmt.Errorf("parse deleted_at: %w", err)
+		}
+	}
+	return nil
+}
 
 // Remember stores a new episode in the given namespace.
 // If occurredAt is nil, the current time is used.
@@ -129,11 +155,11 @@ func (b *Brain) PurgeEpisode(ctx context.Context, episodeID int64) error {
 // GetEpisode returns a single episode by ID.
 func (b *Brain) GetEpisode(ctx context.Context, episodeID int64) (*models.Episode, error) {
 	var e models.Episode
-	err := b.pool.QueryRowContext(ctx,
+	err := scanEpisode(&e, b.pool.QueryRowContext(ctx,
 		`SELECT id, namespace_id, content, embedding, embedding_model, occurred_at, created_at, deleted_at
 		 FROM episodes WHERE id = $1`,
 		episodeID,
-	).Scan(&e.ID, &e.NamespaceID, &e.Content, &e.Embedding, &e.EmbeddingModel, &e.OccurredAt, &e.CreatedAt, &e.DeletedAt)
+	), true)
 	if err != nil {
 		return nil, ErrEpisodeNotFound
 	}

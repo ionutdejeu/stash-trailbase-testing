@@ -4,8 +4,30 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/alash3al/stash/internal/models"
+	"github.com/ionutdejeu/stash-trailbase-testing/internal/models"
 )
+
+func scanCausalLink(cl *models.CausalLink, row rowScanner, includeDeleted bool) error {
+	var createdAtRaw any
+	var deletedAtRaw any
+	dest := []any{&cl.ID, &cl.NamespaceID, &cl.CauseFactID, &cl.EffectFactID, &cl.Confidence, &cl.Method, &createdAtRaw}
+	if includeDeleted {
+		dest = append(dest, &deletedAtRaw)
+	}
+	if err := row.Scan(dest...); err != nil {
+		return err
+	}
+	var err error
+	if cl.CreatedAt, err = parseSQLiteTime(createdAtRaw); err != nil {
+		return fmt.Errorf("parse created_at: %w", err)
+	}
+	if includeDeleted {
+		if cl.DeletedAt, err = parseOptionalSQLiteTime(deletedAtRaw); err != nil {
+			return fmt.Errorf("parse deleted_at: %w", err)
+		}
+	}
+	return nil
+}
 
 var ErrCausalLinkNotFound = fmt.Errorf("brain: causal link not found")
 
@@ -66,7 +88,7 @@ func (b *Brain) ListCausalLinks(ctx context.Context, namespaceSlugs []string, pa
 	var result []models.CausalLink
 	for rows.Next() {
 		var cl models.CausalLink
-		if err := rows.Scan(&cl.ID, &cl.NamespaceID, &cl.CauseFactID, &cl.EffectFactID, &cl.Confidence, &cl.Method, &cl.CreatedAt, &cl.DeletedAt); err != nil {
+		if err := scanCausalLink(&cl, rows, true); err != nil {
 			return nil, fmt.Errorf("scan causal link: %w", err)
 		}
 		result = append(result, cl)
@@ -81,13 +103,13 @@ func (b *Brain) CreateCausalLink(ctx context.Context, nsID, causeFactID, effectF
 	}
 
 	var cl models.CausalLink
-	err := b.pool.QueryRowContext(ctx,
+	err := scanCausalLink(&cl, b.pool.QueryRowContext(ctx,
 		`INSERT INTO causal_links (namespace_id, cause_fact_id, effect_fact_id, confidence, method)
 		 VALUES ($1, $2, $3, $4, 'asserted')
 		 ON CONFLICT (cause_fact_id, effect_fact_id) WHERE deleted_at IS NULL DO NOTHING
 		 RETURNING id, namespace_id, cause_fact_id, effect_fact_id, confidence, method, created_at`,
 		nsID, causeFactID, effectFactID, confidence,
-	).Scan(&cl.ID, &cl.NamespaceID, &cl.CauseFactID, &cl.EffectFactID, &cl.Confidence, &cl.Method, &cl.CreatedAt)
+	), false)
 	if err != nil {
 		if isNoRows(err) {
 			return nil, fmt.Errorf("brain: causal link already exists between facts %d and %d", causeFactID, effectFactID)
@@ -157,7 +179,7 @@ func (b *Brain) TraceCausalChain(ctx context.Context, factID int64, direction st
 	var result []models.CausalLink
 	for rows.Next() {
 		var cl models.CausalLink
-		if err := rows.Scan(&cl.ID, &cl.NamespaceID, &cl.CauseFactID, &cl.EffectFactID, &cl.Confidence, &cl.Method, &cl.CreatedAt); err != nil {
+		if err := scanCausalLink(&cl, rows, false); err != nil {
 			return nil, fmt.Errorf("scan causal chain: %w", err)
 		}
 		result = append(result, cl)

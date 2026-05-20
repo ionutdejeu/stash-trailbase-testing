@@ -5,11 +5,32 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/alash3al/stash/internal/models"
-	"github.com/alash3al/stash/internal/reasoner"
+	"github.com/ionutdejeu/stash-trailbase-testing/internal/models"
+	"github.com/ionutdejeu/stash-trailbase-testing/internal/reasoner"
 )
 
 var ErrContradictionNotFound = fmt.Errorf("brain: contradiction not found")
+
+func scanContradiction(c *models.Contradiction, row rowScanner) error {
+	var resolvedAtRaw any
+	var createdAtRaw any
+	if err := row.Scan(
+		&c.ID, &c.NamespaceID, &c.OldFactID, &c.NewFactID,
+		&c.Entity, &c.Property, &c.OldValue, &c.NewValue,
+		&c.Confidence, &c.Method, &c.Resolved, &c.Resolution,
+		&resolvedAtRaw, &createdAtRaw,
+	); err != nil {
+		return err
+	}
+	var err error
+	if c.ResolvedAt, err = parseOptionalSQLiteTime(resolvedAtRaw); err != nil {
+		return fmt.Errorf("parse resolved_at: %w", err)
+	}
+	if c.CreatedAt, err = parseSQLiteTime(createdAtRaw); err != nil {
+		return fmt.Errorf("parse created_at: %w", err)
+	}
+	return nil
+}
 
 // DetectContradictions checks a newly inserted fact against existing facts
 // with the same (entity, property) in the same namespace.
@@ -158,12 +179,7 @@ func (b *Brain) ListContradictions(ctx context.Context, namespaceSlugs []string,
 	var result []models.Contradiction
 	for rows.Next() {
 		var c models.Contradiction
-		if err := rows.Scan(
-			&c.ID, &c.NamespaceID, &c.OldFactID, &c.NewFactID,
-			&c.Entity, &c.Property, &c.OldValue, &c.NewValue,
-			&c.Confidence, &c.Method, &c.Resolved, &c.Resolution,
-			&c.ResolvedAt, &c.CreatedAt,
-		); err != nil {
+		if err := scanContradiction(&c, rows); err != nil {
 			return nil, fmt.Errorf("scan contradiction: %w", err)
 		}
 		result = append(result, c)
@@ -195,17 +211,12 @@ func (b *Brain) ResolveContradiction(ctx context.Context, id int64, resolution s
 // GetContradiction returns a single contradiction by ID.
 func (b *Brain) GetContradiction(ctx context.Context, id int64) (*models.Contradiction, error) {
 	var c models.Contradiction
-	err := b.pool.QueryRowContext(ctx,
+	err := scanContradiction(&c, b.pool.QueryRowContext(ctx,
 		`SELECT id, namespace_id, old_fact_id, new_fact_id, entity, property, old_value, new_value,
 		 confidence, method, resolved, resolution, resolved_at, created_at
 		 FROM contradictions WHERE id = $1`,
 		id,
-	).Scan(
-		&c.ID, &c.NamespaceID, &c.OldFactID, &c.NewFactID,
-		&c.Entity, &c.Property, &c.OldValue, &c.NewValue,
-		&c.Confidence, &c.Method, &c.Resolved, &c.Resolution,
-		&c.ResolvedAt, &c.CreatedAt,
-	)
+	))
 	if err != nil {
 		if isNoRows(err) {
 			return nil, ErrContradictionNotFound

@@ -3,7 +3,7 @@ version: '3.8'
 services:
   trailbase:
     image: trailbase/trailbase:latest
-    command: ["/app/trail", "--data-dir", "/app/traildepot", "run", "--address", "0.0.0.0:4000"]
+    command: ["/app/trail", "--data-dir", "/app/traildepot/traildepot", "run", "--address", "0.0.0.0:4000"]
     ports:
       - "4000:4000"
     volumes:
@@ -20,7 +20,7 @@ services:
     ports:
       - "8080:8080"
     environment:
-      STASH_STORE_DSN: traildepot/data/main.db
+      STASH_STORE_DSN: /app/traildepot/traildepot/data/main.db
       STASH_VECTOR_DIM: 1536
       STASH_MAX_RESULT_SIZE: 10000
       STASH_OPENAI_API_KEY: ${STASH_OPENAI_API_KEY}
@@ -37,6 +37,8 @@ services:
       STASH_CONSOLIDATION_WINDOW: 168h
       STASH_DECAY_FACTOR: 0.95
       STASH_EXPIRY_THRESHOLD: 0.1
+    volumes:
+      - ./traildepot:/app/traildepot
     depends_on:
       trailbase:
         condition: service_healthy

@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alash3al/stash/internal/embedder"
-	"github.com/alash3al/stash/internal/queries"
-	"github.com/alash3al/stash/internal/reasoner"
+	"github.com/ionutdejeu/stash-trailbase-testing/internal/embedder"
+	"github.com/ionutdejeu/stash-trailbase-testing/internal/queries"
+	"github.com/ionutdejeu/stash-trailbase-testing/internal/reasoner"
 )
 
 var (

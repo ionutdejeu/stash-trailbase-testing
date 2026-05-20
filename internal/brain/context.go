@@ -5,8 +5,28 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/alash3al/stash/internal/models"
+	"github.com/ionutdejeu/stash-trailbase-testing/internal/models"
 )
+
+func scanContext(c *models.Context, row rowScanner) error {
+	var expiresAtRaw any
+	var createdAtRaw any
+	var updatedAtRaw any
+	if err := row.Scan(&c.NamespaceID, &c.Focus, &expiresAtRaw, &createdAtRaw, &updatedAtRaw); err != nil {
+		return err
+	}
+	var err error
+	if c.ExpiresAt, err = parseSQLiteTime(expiresAtRaw); err != nil {
+		return fmt.Errorf("parse expires_at: %w", err)
+	}
+	if c.CreatedAt, err = parseSQLiteTime(createdAtRaw); err != nil {
+		return fmt.Errorf("parse created_at: %w", err)
+	}
+	if c.UpdatedAt, err = parseSQLiteTime(updatedAtRaw); err != nil {
+		return fmt.Errorf("parse updated_at: %w", err)
+	}
+	return nil
+}
 
 // SetContext updates the working context for a namespace.
 func (b *Brain) SetContext(ctx context.Context, namespaceSlug, focus string, expiresAt time.Time) error {
@@ -44,11 +64,11 @@ func (b *Brain) GetContext(ctx context.Context, namespaceSlug string) (*models.C
 	}
 
 	var c models.Context
-	err = b.pool.QueryRowContext(ctx,
+	err = scanContext(&c, b.pool.QueryRowContext(ctx,
 		`SELECT namespace_id, focus, expires_at, created_at, updated_at
 		 FROM contexts WHERE namespace_id = $1`,
 		nsID,
-	).Scan(&c.NamespaceID, &c.Focus, &c.ExpiresAt, &c.CreatedAt, &c.UpdatedAt)
+	))
 	if err != nil {
 		if isNoRows(err) {
 			return nil, nil

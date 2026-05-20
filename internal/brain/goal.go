@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/alash3al/stash/internal/models"
+	"github.com/ionutdejeu/stash-trailbase-testing/internal/models"
 )
 
 var (
@@ -17,20 +17,41 @@ const goalColumns = `id, namespace_id, parent_id, content, status, priority, not
 completed_at, abandoned_at, created_at, updated_at, deleted_at`
 
 func scanGoal(h *models.Goal, row rowScanner) error {
-	return row.Scan(
+	var completedAtRaw any
+	var abandonedAtRaw any
+	var createdAtRaw any
+	var updatedAtRaw any
+	var deletedAtRaw any
+	if err := row.Scan(
 		&h.ID, &h.NamespaceID, &h.ParentID, &h.Content, &h.Status, &h.Priority, &h.Notes,
-		&h.CompletedAt, &h.AbandonedAt, &h.CreatedAt, &h.UpdatedAt, &h.DeletedAt,
-	)
+		&completedAtRaw, &abandonedAtRaw, &createdAtRaw, &updatedAtRaw, &deletedAtRaw,
+	); err != nil {
+		return err
+	}
+	var err error
+	if h.CompletedAt, err = parseOptionalSQLiteTime(completedAtRaw); err != nil {
+		return fmt.Errorf("parse completed_at: %w", err)
+	}
+	if h.AbandonedAt, err = parseOptionalSQLiteTime(abandonedAtRaw); err != nil {
+		return fmt.Errorf("parse abandoned_at: %w", err)
+	}
+	if h.CreatedAt, err = parseSQLiteTime(createdAtRaw); err != nil {
+		return fmt.Errorf("parse created_at: %w", err)
+	}
+	if h.UpdatedAt, err = parseSQLiteTime(updatedAtRaw); err != nil {
+		return fmt.Errorf("parse updated_at: %w", err)
+	}
+	if h.DeletedAt, err = parseOptionalSQLiteTime(deletedAtRaw); err != nil {
+		return fmt.Errorf("parse deleted_at: %w", err)
+	}
+	return nil
 }
 
 func scanGoalRows(rows rowsScanner) ([]models.Goal, error) {
 	var result []models.Goal
 	for rows.Next() {
 		var g models.Goal
-		if err := rows.Scan(
-			&g.ID, &g.NamespaceID, &g.ParentID, &g.Content, &g.Status, &g.Priority, &g.Notes,
-			&g.CompletedAt, &g.AbandonedAt, &g.CreatedAt, &g.UpdatedAt, &g.DeletedAt,
-		); err != nil {
+		if err := scanGoal(&g, rows); err != nil {
 			return nil, fmt.Errorf("scan goal: %w", err)
 		}
 		result = append(result, g)
@@ -55,15 +76,12 @@ func (b *Brain) CreateGoal(ctx context.Context, nsID int64, content string, pare
 	}
 
 	var g models.Goal
-	err := b.pool.QueryRowContext(ctx,
+	err := scanGoal(&g, b.pool.QueryRowContext(ctx,
 		`INSERT INTO goals (namespace_id, parent_id, content, priority)
 		 VALUES ($1, $2, $3, $4)
 		 RETURNING `+goalColumns,
 		nsID, parentID, content, priority,
-	).Scan(
-		&g.ID, &g.NamespaceID, &g.ParentID, &g.Content, &g.Status, &g.Priority, &g.Notes,
-		&g.CompletedAt, &g.AbandonedAt, &g.CreatedAt, &g.UpdatedAt, &g.DeletedAt,
-	)
+	))
 	if err != nil {
 		return nil, fmt.Errorf("create goal: %w", err)
 	}
@@ -117,12 +135,9 @@ func (b *Brain) ListGoals(ctx context.Context, namespaceSlugs []string, status s
 // GetGoal returns a single goal by ID.
 func (b *Brain) GetGoal(ctx context.Context, id int64) (*models.Goal, error) {
 	var g models.Goal
-	err := b.pool.QueryRowContext(ctx,
+	err := scanGoal(&g, b.pool.QueryRowContext(ctx,
 		`SELECT `+goalColumns+` FROM goals WHERE id = $1`, id,
-	).Scan(
-		&g.ID, &g.NamespaceID, &g.ParentID, &g.Content, &g.Status, &g.Priority, &g.Notes,
-		&g.CompletedAt, &g.AbandonedAt, &g.CreatedAt, &g.UpdatedAt, &g.DeletedAt,
-	)
+	))
 	if err != nil {
 		if isNoRows(err) {
 			return nil, ErrGoalNotFound
@@ -160,15 +175,12 @@ func (b *Brain) CompleteGoal(ctx context.Context, id int64, notes string) (*mode
 	now := time.Now().UTC()
 
 	var g models.Goal
-	err = b.pool.QueryRowContext(ctx,
+	err = scanGoal(&g, b.pool.QueryRowContext(ctx,
 		`UPDATE goals SET status = 'completed', completed_at = $2, notes = CASE WHEN $3 = '' THEN notes ELSE $3 END, updated_at = $2
 		 WHERE id = $1
 		 RETURNING `+goalColumns,
 		id, now, notes,
-	).Scan(
-		&g.ID, &g.NamespaceID, &g.ParentID, &g.Content, &g.Status, &g.Priority, &g.Notes,
-		&g.CompletedAt, &g.AbandonedAt, &g.CreatedAt, &g.UpdatedAt, &g.DeletedAt,
-	)
+	))
 	if err != nil {
 		return nil, fmt.Errorf("complete goal: %w", err)
 	}
@@ -233,15 +245,12 @@ func (b *Brain) AbandonGoal(ctx context.Context, id int64, notes string) (*model
 	now := time.Now().UTC()
 
 	var g models.Goal
-	err = b.pool.QueryRowContext(ctx,
+	err = scanGoal(&g, b.pool.QueryRowContext(ctx,
 		`UPDATE goals SET status = 'abandoned', abandoned_at = $2, notes = CASE WHEN $3 = '' THEN notes ELSE $3 END, updated_at = $2
 		 WHERE id = $1
 		 RETURNING `+goalColumns,
 		id, now, notes,
-	).Scan(
-		&g.ID, &g.NamespaceID, &g.ParentID, &g.Content, &g.Status, &g.Priority, &g.Notes,
-		&g.CompletedAt, &g.AbandonedAt, &g.CreatedAt, &g.UpdatedAt, &g.DeletedAt,
-	)
+	))
 	if err != nil {
 		return nil, fmt.Errorf("abandon goal: %w", err)
 	}
@@ -272,15 +281,12 @@ func (b *Brain) UpdateGoal(ctx context.Context, id int64, content string, priori
 	now := time.Now().UTC()
 
 	var g models.Goal
-	err = b.pool.QueryRowContext(ctx,
+	err = scanGoal(&g, b.pool.QueryRowContext(ctx,
 		`UPDATE goals SET content = $2, priority = $3, notes = $4, updated_at = $5
 		 WHERE id = $1
 		 RETURNING `+goalColumns,
 		id, content, priority, notes, now,
-	).Scan(
-		&g.ID, &g.NamespaceID, &g.ParentID, &g.Content, &g.Status, &g.Priority, &g.Notes,
-		&g.CompletedAt, &g.AbandonedAt, &g.CreatedAt, &g.UpdatedAt, &g.DeletedAt,
-	)
+	))
 	if err != nil {
 		return nil, fmt.Errorf("update goal: %w", err)
 	}
